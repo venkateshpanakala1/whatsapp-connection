@@ -75,6 +75,32 @@ def favicon():
     return '', 204
 
 
+@app.route('/privacy-policy')
+def privacy_policy():
+    return '''
+    <h1>Privacy Policy</h1>
+    <p>We collect WhatsApp phone numbers and message data solely to provide our messaging service.
+    Data is stored securely and never shared with third parties.
+    Contact us at thinkaboutneighbour@gmail.com for any privacy concerns.</p>
+    ''', 200
+
+@app.route('/terms')
+def terms():
+    return '''
+    <h1>Terms of Service</h1>
+    <p>By using this service you agree to use it only for lawful WhatsApp Business communication.
+    We reserve the right to suspend accounts that violate WhatsApp policies.</p>
+    ''', 200
+
+@app.route('/data-deletion')
+def data_deletion():
+    return '''
+    <h1>Data Deletion Instructions</h1>
+    <p>To request deletion of your data, email us at thinkaboutneighbour@gmail.com
+    with your registered WhatsApp number. We will process your request within 30 days.</p>
+    ''', 200
+
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 3000))
     print(f'Server running at http://localhost:{port}')
