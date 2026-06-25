@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>WhatsApp Connect</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    /* ── Status banner ── */
+    .status-banner {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); padding: 14px 18px;
+      display: flex; align-items: center; gap: 12px;
+      max-width: 560px; margin-bottom: 18px;
+      box-shadow: var(--shadow);
+    }
+    .status-dot {
+      width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0;
+      transition: all var(--t);
+    }
+    .status-dot.active   { background: #10b981; box-shadow: 0 0 0 3px rgba(16,185,129,0.2); }
+    .status-dot.inactive { background: #d1d5db; }
+    #status-text { font-size: 13px; color: var(--text-2); flex: 1; }
+    .btn-disconnect {
+      background: none; border: 1.5px solid #fca5a5;
+      color: #dc2626; padding: 5px 14px; border-radius: 7px;
+      font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+      transition: all var(--t); font-family: inherit;
+    }
+    .btn-disconnect:hover { background: #fef2f2; border-color: #dc2626; }
+
+    /* ── Token box ── */
+    .token-box {
+      display: none; margin-top: 16px;
+      background: #f8fafc; border: 1px solid var(--border);
+      border-radius: var(--r-sm); padding: 16px;
+    }
+    .token-box label { font-size: 11px; color: var(--text-2); margin-bottom: 6px; }
+    .token-value {
+      font-family: 'Courier New', monospace; font-size: 12px;
+      word-break: break-all; background: #fff;
+      border: 1px solid var(--border); border-radius: 6px;
+      padding: 10px 12px; color: var(--text); line-height: 1.5;
+    }
+    .token-meta { font-size: 12px; color: #10b981; margin-top: 8px; font-weight: 600; }
+    .copy-btn {
+      margin-top: 10px; padding: 7px 16px;
+      background: #fff; border: 1.5px solid var(--g-500);
+      color: var(--g-500); border-radius: 7px; font-size: 12px;
+      font-weight: 600; cursor: pointer; font-family: inherit;
+      transition: all var(--t);
+    }
+    .copy-btn:hover { background: #f0faf9; }
+  </style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon">💬</div>
+    <div class="brand-text">
+      <div class="app-name">V³</div>
+      <div class="app-sub">the untold energy</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Setup</div>
+    <a href="/" class="nav-item active"><span class="nav-icon">⚡</span> WhatsApp Connect</a>
+    <div class="nav-label">Messaging</div>
+    <a href="/templates" class="nav-item"><span class="nav-icon">📋</span> Templates</a>
+    <a href="/contacts"  class="nav-item"><span class="nav-icon">👥</span> Contacts</a>
+    <a href="/send"      class="nav-item"><span class="nav-icon">📤</span> Bulk Send</a>
+    <a href="/replies"   class="nav-item"><span class="nav-icon">💬</span> Replies</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="conn-status">
+      <span class="conn-dot" id="sidebar-dot"></span>
+      <span id="sidebar-status-text">Checking...</span>
+    </div>
+    <div id="sidebar-user" style="margin-top:10px;display:none">
+      <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="sidebar-email"></div>
+      <button onclick="doLogout()" style="width:100%;padding:7px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">
+        🚪 Sign Out
+      </button>
+    </div>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="page-hdr">
+    <div>
+      <div class="ph-title">WhatsApp Connect</div>
+      <div class="ph-sub">Link your WhatsApp Business Account to get started</div>
+    </div>
+    <div class="ph-user">
+      <div class="ph-email-chip">
+        <span class="ph-avatar" id="hdr-avatar">?</span>
+        <span class="ph-email" id="hdr-email"></span>
+      </div>
+      <button class="btn-logout" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+
+  <!-- Status banner -->
+  <div class="status-banner">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text">Checking connection...</span>
+    <button class="btn-disconnect" onclick="disconnect()">Disconnect</button>
+  </div>
+
+  <!-- Tabs + Form (hidden when connected) -->
+  <div id="connect-form-wrap" style="display:none">
+  <div class="tabs-wrap card-sm" style="max-width:560px">
+    <div class="tab active" onclick="switchTab('connect')">Connect WhatsApp</div>
+    <div class="tab"        onclick="switchTab('token')">Generate Token</div>
+  </div>
+
+  <div class="card-tabs card-sm">
+
+    <!-- Tab 1: Connect -->
+    <div id="tab-connect" class="tab-panel active">
+      <div class="step-note">
+        Enter your <strong>Phone Number ID</strong> and <strong>WABA ID</strong>
+        from Meta Business Manager, along with your access token.
+        Don't have a long-lived token? Use the <strong>Generate Token</strong> tab first.
+      </div>
+
+      <div class="form-group">
+        <label>Phone Number ID</label>
+        <input type="text" id="phone_number_id" placeholder="e.g. 134632433069005" />
+        <p class="hint">Found in Meta › WhatsApp › API Setup</p>
+      </div>
+      <div class="form-group">
+        <label>WhatsApp Business Account ID (WABA ID)</label>
+        <input type="text" id="waba_id" placeholder="e.g. 102938475610293" />
+        <p class="hint">Found in Meta Business Manager › WhatsApp Accounts</p>
+      </div>
+      <div class="form-group">
+        <label>Access Token</label>
+        <input type="password" id="access_token" placeholder="Paste your access token" />
+        <p class="hint">Use a permanent System User token or long-lived user token</p>
+      </div>
+
+      <button class="btn btn-primary btn-full btn-lg" onclick="connect()" id="connect-btn">
+        ⚡ Connect WhatsApp
+      </button>
+      <div class="alert" id="connect-alert"></div>
+    </div>
+
+    <!-- Tab 2: Generate Token -->
+    <div id="tab-token" class="tab-panel">
+      <div class="step-note">
+        Exchange a <strong>short-lived token</strong> (1-2 hrs) into a
+        <strong>long-lived token</strong> (~60 days).
+        You need your Facebook <strong>App ID</strong> and <strong>App Secret</strong>.
+      </div>
+
+      <div class="form-group">
+        <label>Short-Lived User Token</label>
+        <input type="text" id="short_lived_token" placeholder="Paste short-lived token from Meta" />
+        <p class="hint">Get from: Meta for Developers › Graph API Explorer › Generate Token</p>
+      </div>
+      <div class="form-group">
+        <label>Facebook App ID</label>
+        <input type="text" id="app_id" placeholder="e.g. 1364790973900146" />
+      </div>
+      <div class="form-group">
+        <label>Facebook App Secret</label>
+        <input type="password" id="app_secret" placeholder="App Secret from Meta App Dashboard" />
+      </div>
+
+      <button class="btn btn-green btn-full btn-lg" onclick="generateToken()" id="gen-btn">
+        🔑 Generate Long-Lived Token
+      </button>
+      <div class="alert" id="token-alert"></div>
+
+      <div class="token-box" id="token-result-box">
+        <label>Your Long-Lived Token</label>
+        <div class="token-value" id="token-result-value"></div>
+        <div class="token-meta"  id="token-result-meta"></div>
+        <button class="copy-btn" onclick="copyToken()">📋 Copy Token</button>
+        <hr class="divider" />
+        <p style="font-size:12px;color:var(--text-2)">
+          Copy this token and use it in the <strong>Connect WhatsApp</strong> tab.
+        </p>
+      </div>
+    </div>
+
+  </div>
+</div>
+  </div><!-- /connect-form-wrap -->
+</div>
+
+<script>
+  const API = '/api/whatsapp';
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach((t, i) => {
+      t.classList.toggle('active', (i === 0 && tab === 'connect') || (i === 1 && tab === 'token'));
+    });
+    document.getElementById('tab-connect').classList.toggle('active', tab === 'connect');
+    document.getElementById('tab-token').classList.toggle('active', tab === 'token');
+  }
+
+  function showAlert(id, type, msg) {
+    const el = document.getElementById(id);
+    el.className = `alert ${type}`;
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  function hideAlert(id) { document.getElementById(id).style.display = 'none'; }
+
+  async function loadStatus() {
+    try {
+      const res = await fetch(`${API}/status`);
+      const data = await res.json();
+      const dot  = document.getElementById('status-dot');
+      const text = document.getElementById('status-text');
+      const sdot = document.getElementById('sidebar-dot');
+      const stxt = document.getElementById('sidebar-status-text');
+
+      const form = document.getElementById('connect-form-wrap');
+      if (data.connected && data.data.status === 'active') {
+        dot.className = 'status-dot active';
+        const d = data.data;
+        const since = new Date(d.verified_at).toLocaleString();
+        text.textContent = `Connected — Phone ID: ${d.phone_number_id} | WABA: ${d.waba_id} | Since: ${since}`;
+        sdot.classList.add('on'); stxt.textContent = 'Connected';
+        form.style.display = 'none';   // hide form when connected
+      } else {
+        dot.className = 'status-dot inactive';
+        text.textContent = 'Not connected. Fill in your credentials below.';
+        sdot.classList.remove('on'); stxt.textContent = 'Not connected';
+        form.style.display = 'block';  // show form when not connected
+      }
+    } catch (e) {}
+  }
+
+  async function connect() {
+    const phone_number_id = document.getElementById('phone_number_id').value.trim();
+    const waba_id         = document.getElementById('waba_id').value.trim();
+    const access_token    = document.getElementById('access_token').value.trim();
+    if (!phone_number_id || !waba_id || !access_token)
+      return showAlert('connect-alert', 'error', 'All three fields are required.');
+    const btn = document.getElementById('connect-btn');
+    btn.disabled = true; btn.textContent = 'Connecting...';
+    hideAlert('connect-alert');
+    try {
+      const res  = await fetch(`${API}/connect`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone_number_id, waba_id, access_token }),
+      });
+      const data = await res.json();
+      if (data.success) { showAlert('connect-alert', 'success', data.message); loadStatus(); }
+      else showAlert('connect-alert', 'error', data.error || 'Connection failed');
+    } catch (e) { showAlert('connect-alert', 'error', 'Server error: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = '⚡ Connect WhatsApp'; }
+  }
+
+  async function generateToken() {
+    const short_lived_token = document.getElementById('short_lived_token').value.trim();
+    const app_id            = document.getElementById('app_id').value.trim();
+    const app_secret        = document.getElementById('app_secret').value.trim();
+    if (!short_lived_token || !app_id || !app_secret)
+      return showAlert('token-alert', 'error', 'All three fields are required.');
+    const btn = document.getElementById('gen-btn');
+    btn.disabled = true; btn.textContent = 'Generating...';
+    hideAlert('token-alert');
+    document.getElementById('token-result-box').style.display = 'none';
+    try {
+      const res  = await fetch(`${API}/generate-token`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ short_lived_token, app_id, app_secret }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        document.getElementById('token-result-value').textContent = data.long_lived_token;
+        document.getElementById('token-result-meta').textContent  = data.message;
+        document.getElementById('token-result-box').style.display = 'block';
+        showAlert('token-alert', 'success', 'Long-lived token generated successfully!');
+      } else showAlert('token-alert', 'error', data.error || 'Token generation failed');
+    } catch (e) { showAlert('token-alert', 'error', 'Server error: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = '🔑 Generate Long-Lived Token'; }
+  }
+
+  function copyToken() {
+    const token = document.getElementById('token-result-value').textContent;
+    navigator.clipboard.writeText(token).then(() => {
+      const btn = document.querySelector('.copy-btn');
+      btn.textContent = '✓ Copied!';
+      setTimeout(() => { btn.textContent = '📋 Copy Token'; }, 2000);
+    });
+  }
+
+  async function disconnect() {
+    if (!confirm('Disconnect WhatsApp?')) return;
+    await fetch(`${API}/disconnect`, { method: 'POST' });
+    await loadStatus();
+  }
+
+  loadStatus();
+  loadSidebarUser();
+
+  async function loadSidebarUser() {
+    try {
+      const res  = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.logged_in) {
+        document.getElementById('sidebar-email').textContent = data.email;
+        document.getElementById('sidebar-user').style.display = 'block';
+        document.getElementById('hdr-email').textContent = data.email;
+        document.getElementById('hdr-avatar').textContent = data.email.charAt(0).toUpperCase();
+      }
+    } catch (e) {}
+  }
+
+  async function doLogout() {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    window.location.href = '/login';
+  }
+</script>
+</body>
+</html>

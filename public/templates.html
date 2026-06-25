@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Templates</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    /* ── Template cards ── */
+    .tpl-grid { display: flex; flex-direction: column; gap: 10px; }
+    .tpl-card {
+      border: 1.5px solid var(--border); border-radius: var(--r);
+      padding: 15px 18px; display: flex;
+      align-items: flex-start; justify-content: space-between; gap: 14px;
+      transition: all var(--t); background: var(--surface);
+      border-left: 4px solid transparent;
+    }
+    .tpl-card:hover {
+      border-left-color: var(--g-500);
+      background: #f8fffe; transform: translateX(2px);
+      box-shadow: 0 2px 12px rgba(18,140,126,0.1);
+    }
+    .tpl-info { flex: 1; min-width: 0; }
+    .tpl-name { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 5px; }
+    .tpl-body { font-size: 12.5px; color: var(--text-2); line-height: 1.5;
+                white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 560px; }
+    .tpl-meta { font-size: 11px; color: var(--text-3); margin-top: 6px; }
+    .tpl-card-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+
+    /* ── Upload area (for header image/doc) ── */
+    .upload-area {
+      display: none; border: 2px dashed #d1d5db;
+      border-radius: var(--r); padding: 24px;
+      text-align: center; cursor: pointer;
+      margin-top: 10px; transition: all var(--t); background: #fafafa;
+    }
+    .upload-area:hover, .upload-area.drag-over { border-color: var(--g-500); background: #f0faf9; }
+    .upload-area.active { display: block; }
+    .upload-area input { display: none; }
+    .upload-icon  { font-size: 28px; margin-bottom: 6px; color: var(--text-3); }
+    .upload-text  { font-size: 13px; color: var(--text-2); }
+    .upload-text strong { color: var(--g-500); cursor: pointer; }
+
+    .upload-preview {
+      display: none; align-items: center; gap: 10px;
+      padding: 10px 14px; background: #f0faf9;
+      border: 1px solid #a7f3d0; border-radius: var(--r-sm);
+      margin-top: 10px; font-size: 13px;
+    }
+    .upload-preview.active { display: flex; }
+    .upload-preview .fname { flex: 1; color: var(--text); font-weight: 500; }
+    .upload-progress { font-size: 12px; color: var(--g-500); }
+    .btn-remove-file {
+      background: none; border: none;
+      color: #dc2626; cursor: pointer; font-size: 17px; line-height: 1;
+      transition: opacity var(--t);
+    }
+
+    /* ── Btn row for preview + create ── */
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
+    .btn-preview {
+      padding: 13px; background: var(--surface); color: var(--g-500);
+      border: 2px solid var(--g-500); border-radius: 10px;
+      font-size: 14px; font-weight: 700; cursor: pointer;
+      transition: all var(--t); font-family: inherit;
+    }
+    .btn-preview:hover { background: #f0faf9; transform: translateY(-1px); }
+    .btn-create {
+      padding: 13px; background: var(--g-500); color: #fff;
+      border: none; border-radius: 10px; font-size: 14px; font-weight: 700;
+      cursor: pointer; transition: all var(--t); font-family: inherit;
+      box-shadow: 0 2px 8px rgba(18,140,126,0.35);
+    }
+    .btn-create:hover:not(:disabled) { background: #0e7569; transform: translateY(-1px); }
+    .btn-create:disabled { opacity: 0.5; cursor: not-allowed; }
+  </style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon">💬</div>
+    <div class="brand-text">
+      <div class="app-name">V³</div>
+      <div class="app-sub">the untold energy</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Setup</div>
+    <a href="/"          class="nav-item"><span class="nav-icon">⚡</span> WhatsApp Connect</a>
+    <div class="nav-label">Messaging</div>
+    <a href="/templates" class="nav-item active"><span class="nav-icon">📋</span> Templates</a>
+    <a href="/contacts"  class="nav-item"><span class="nav-icon">👥</span> Contacts</a>
+    <a href="/send"      class="nav-item"><span class="nav-icon">📤</span> Bulk Send</a>
+    <a href="/replies"   class="nav-item"><span class="nav-icon">💬</span> Replies</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="conn-status">
+      <span class="conn-dot" id="sidebar-dot"></span>
+      <span id="sidebar-status-text">Checking...</span>
+    </div>
+    <div id="sidebar-user" style="margin-top:10px;display:none">
+      <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="sidebar-email"></div>
+      <button onclick="doLogout()" style="width:100%;padding:7px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">
+        🚪 Sign Out
+      </button>
+    </div>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="page-hdr">
+    <div>
+      <div class="ph-title">Templates</div>
+      <div class="ph-sub">Manage and create your WhatsApp message templates</div>
+    </div>
+    <div class="ph-user">
+      <div class="ph-email-chip">
+        <span class="ph-avatar" id="hdr-avatar">?</span>
+        <span class="ph-email" id="hdr-email"></span>
+      </div>
+      <button class="btn-logout" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+
+  <!-- Recent templates -->
+  <div class="card card-wide">
+    <div class="card-hdr">
+      <div>
+        <div class="card-title">Recent Templates <span style="font-size:11px;color:var(--text-3);font-weight:400">(last 2)</span></div>
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="loadTemplates()">↻ Refresh</button>
+    </div>
+    <div id="templates-list"><div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading templates...</div></div></div>
+  </div>
+
+  <!-- Create template -->
+  <div class="card card-wide">
+    <div class="card-hdr">
+      <div class="card-title">Create New Template</div>
+    </div>
+
+    <div class="row-2">
+      <div class="form-group">
+        <label>Template Name</label>
+        <input type="text" id="tpl-name" placeholder="e.g. welcome_message" oninput="sanitizeName(this)" />
+        <p class="hint">Lowercase letters, numbers and underscores only</p>
+      </div>
+      <div class="form-group">
+        <label>Category</label>
+        <select id="tpl-category">
+          <option value="MARKETING">Marketing</option>
+          <option value="UTILITY">Utility</option>
+          <option value="AUTHENTICATION">Authentication</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row-2">
+      <div class="form-group">
+        <label>Language</label>
+        <select id="tpl-language">
+          <option value="en">English</option>
+          <option value="en_US">English (US)</option>
+          <option value="hi">Hindi</option>
+          <option value="ta">Tamil</option>
+          <option value="te">Telugu</option>
+          <option value="ml">Malayalam</option>
+          <option value="kn">Kannada</option>
+          <option value="mr">Marathi</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Header Type</label>
+        <select id="tpl-header-type" onchange="onHeaderTypeChange(this.value)">
+          <option value="NONE">No Header (Text only)</option>
+          <option value="IMAGE">Image</option>
+          <option value="DOCUMENT">PDF / Document</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- File upload zone -->
+    <div class="upload-area" id="upload-area"
+         onclick="document.getElementById('file-input').click()"
+         ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+      <input type="file" id="file-input" onchange="onFileSelected(this)" />
+      <div class="upload-icon" id="upload-icon">📁</div>
+      <div class="upload-text">
+        Drag &amp; drop or <strong>browse</strong> to upload<br/>
+        <span id="upload-hint" style="font-size:11px;color:var(--text-3)">JPG, PNG up to 5MB</span>
+      </div>
+    </div>
+    <div class="upload-preview" id="upload-preview">
+      <span class="fname" id="preview-fname"></span>
+      <span class="upload-progress" id="upload-progress"></span>
+      <button class="btn-remove-file" onclick="removeFile()" title="Remove">✕</button>
+    </div>
+
+    <div class="form-group" style="margin-top:16px">
+      <label>Body Text <span style="color:#dc2626">*</span></label>
+      <textarea id="tpl-body" placeholder="Hello {{1}}, your order {{2}} is confirmed!" oninput="updateCharCount()"></textarea>
+      <div class="char-count" id="char-count">0 / 1024</div>
+      <p class="hint">Use {{1}}, {{2}}... for dynamic variables</p>
+    </div>
+
+    <div class="form-group">
+      <label>Footer Text <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+      <input type="text" id="tpl-footer" placeholder="e.g. Reply STOP to unsubscribe" maxlength="60" />
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-preview" onclick="openPreview()">👁 Preview</button>
+      <button class="btn-create" id="create-btn" onclick="createTemplate()">✨ Create Template</button>
+    </div>
+    <div class="alert" id="create-alert"></div>
+  </div>
+</div>
+
+<!-- Preview Modal -->
+<div class="modal-overlay" id="preview-modal" onclick="closePreviewOnBg(event)">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span class="modal-title">Template Preview</span>
+      <button class="modal-close" onclick="closePreview()">✕</button>
+    </div>
+    <div class="wa-chat-bg">
+      <div class="wa-bubble">
+        <div id="prev-header"></div>
+        <div class="wa-body"   id="prev-body"></div>
+        <div class="wa-footer" id="prev-footer"></div>
+        <div class="wa-time"   id="prev-time"></div>
+      </div>
+    </div>
+    <div class="modal-note">This is how your template will appear in WhatsApp</div>
+  </div>
+</div>
+
+<script>
+  const API = '/api/templates';
+  let uploadedHandle = '';
+  let selectedFile   = null;
+
+  async function loadSidebarStatus() {
+    try {
+      const res  = await fetch('/api/whatsapp/status');
+      const data = await res.json();
+      const dot  = document.getElementById('sidebar-dot');
+      const txt  = document.getElementById('sidebar-status-text');
+      if (data.connected && data.data.status === 'active') {
+        dot.classList.add('on'); txt.textContent = 'Connected';
+      } else {
+        dot.classList.remove('on'); txt.textContent = 'Not connected';
+      }
+    } catch (e) {}
+  }
+
+  async function loadTemplates() {
+    document.getElementById('templates-list').innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>';
+    try {
+      const res  = await fetch(`${API}/list`);
+      const data = await res.json();
+      if (!data.success || !data.data.length) {
+        document.getElementById('templates-list').innerHTML =
+          '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No templates found.</div><div class="empty-sub">Create one below.</div></div>';
+        return;
+      }
+      const html = data.data.map(t => {
+        const body   = t.components?.find(c => c.type === 'BODY')?.text || '';
+        const header = t.components?.find(c => c.type === 'HEADER');
+        const tag    = header ? `<span style="font-size:10.5px;color:var(--text-3);font-weight:600">[${header.format}]</span> ` : '';
+        return `
+          <div class="tpl-card">
+            <div class="tpl-info">
+              <div class="tpl-name">${t.name}</div>
+              <div class="tpl-body">${tag}${body.substring(0,130)}${body.length > 130 ? '…' : ''}</div>
+              <div class="tpl-meta">${t.category} &middot; ${t.language}</div>
+            </div>
+            <div class="tpl-card-right">
+              <span class="badge ${badgeClass(t.status)}">${t.status}</span>
+            </div>
+          </div>`;
+      }).join('');
+      document.getElementById('templates-list').innerHTML = `<div class="tpl-grid">${html}</div>`;
+    } catch (e) {
+      document.getElementById('templates-list').innerHTML = `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+    }
+  }
+
+  function badgeClass(s) {
+    return { APPROVED:'badge-approved', PENDING:'badge-pending', REJECTED:'badge-rejected', PAUSED:'badge-paused' }[s] || 'badge-pending';
+  }
+
+  function onHeaderTypeChange(val) {
+    const area = document.getElementById('upload-area');
+    const icon = document.getElementById('upload-icon');
+    const hint = document.getElementById('upload-hint');
+    const inp  = document.getElementById('file-input');
+    removeFile();
+    if (val === 'IMAGE') {
+      area.classList.add('active');
+      icon.textContent = '🖼️';
+      hint.textContent = 'JPG, PNG, WEBP up to 5MB';
+      inp.accept = 'image/jpeg,image/png,image/webp';
+    } else if (val === 'DOCUMENT') {
+      area.classList.add('active');
+      icon.textContent = '📄';
+      hint.textContent = 'PDF up to 100MB';
+      inp.accept = 'application/pdf';
+    } else {
+      area.classList.remove('active');
+    }
+  }
+
+  function onFileSelected(input) {
+    if (input.files && input.files[0]) { selectedFile = input.files[0]; showFilePrev(selectedFile.name); }
+  }
+  function onDragOver(e)  { e.preventDefault(); document.getElementById('upload-area').classList.add('drag-over'); }
+  function onDragLeave()  { document.getElementById('upload-area').classList.remove('drag-over'); }
+  function onDrop(e) {
+    e.preventDefault();
+    document.getElementById('upload-area').classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) { selectedFile = file; showFilePrev(file.name); }
+  }
+  function showFilePrev(name) {
+    document.getElementById('preview-fname').textContent = name;
+    document.getElementById('upload-progress').textContent = 'Ready to upload';
+    document.getElementById('upload-preview').classList.add('active');
+  }
+  function removeFile() {
+    selectedFile = null; uploadedHandle = '';
+    document.getElementById('file-input').value = '';
+    document.getElementById('upload-preview').classList.remove('active');
+    document.getElementById('upload-progress').textContent = '';
+  }
+
+  async function uploadMedia() {
+    if (!selectedFile) return true;
+    document.getElementById('upload-progress').textContent = 'Uploading...';
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    const res  = await fetch(`${API}/upload-media`, { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.success) {
+      uploadedHandle = data.handle;
+      document.getElementById('upload-progress').textContent = '✓ Uploaded';
+      return true;
+    }
+    document.getElementById('upload-progress').textContent = '✗ Upload failed';
+    showAlert('create-alert', 'error', 'Media upload failed: ' + data.error);
+    return false;
+  }
+
+  async function createTemplate() {
+    const name        = document.getElementById('tpl-name').value.trim();
+    const category    = document.getElementById('tpl-category').value;
+    const language    = document.getElementById('tpl-language').value;
+    const header_type = document.getElementById('tpl-header-type').value;
+    const body_text   = document.getElementById('tpl-body').value.trim();
+    const footer_text = document.getElementById('tpl-footer').value.trim();
+    if (!name)       return showAlert('create-alert', 'error', 'Template name is required');
+    if (!body_text)  return showAlert('create-alert', 'error', 'Body text is required');
+    if (body_text.length > 1024) return showAlert('create-alert', 'error', 'Body exceeds 1024 chars');
+    const btn = document.getElementById('create-btn');
+    btn.disabled = true; btn.textContent = 'Creating...';
+    hideAlert('create-alert');
+    try {
+      if (header_type !== 'NONE' && selectedFile) {
+        const ok = await uploadMedia();
+        if (!ok) { btn.disabled = false; btn.textContent = '✨ Create Template'; return; }
+      }
+      const res  = await fetch(`${API}/create`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, category, language, header_type, header_handle: uploadedHandle, body_text, footer_text }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showAlert('create-alert', 'success', data.message + ' — Status: ' + (data.data?.status || 'PENDING'));
+        resetForm(); loadTemplates();
+      } else showAlert('create-alert', 'error', data.error || 'Failed to create template');
+    } catch (e) { showAlert('create-alert', 'error', 'Server error: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = '✨ Create Template'; }
+  }
+
+  function sanitizeName(input) { input.value = input.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'); }
+  function updateCharCount() {
+    const len = document.getElementById('tpl-body').value.length;
+    const el  = document.getElementById('char-count');
+    el.textContent = `${len} / 1024`;
+    el.className = 'char-count' + (len > 1024 ? ' over' : len > 900 ? ' warn' : '');
+  }
+  function resetForm() {
+    document.getElementById('tpl-name').value     = '';
+    document.getElementById('tpl-body').value     = '';
+    document.getElementById('tpl-footer').value   = '';
+    document.getElementById('tpl-header-type').value = 'NONE';
+    document.getElementById('char-count').textContent = '0 / 1024';
+    document.getElementById('upload-area').classList.remove('active');
+    removeFile();
+  }
+  function showAlert(id, type, msg) {
+    const el = document.getElementById(id);
+    el.className = `alert ${type}`; el.textContent = msg; el.style.display = 'block';
+  }
+  function hideAlert(id) { document.getElementById(id).style.display = 'none'; }
+
+  function openPreview() {
+    const headerType = document.getElementById('tpl-header-type').value;
+    const bodyText   = document.getElementById('tpl-body').value.trim();
+    const footerText = document.getElementById('tpl-footer').value.trim();
+    const fname      = document.getElementById('preview-fname').textContent;
+    let headerHtml = '';
+    if (headerType === 'IMAGE') {
+      const imgSrc = selectedFile ? URL.createObjectURL(selectedFile) : null;
+      headerHtml = imgSrc
+        ? `<img src="${imgSrc}" style="width:100%;height:auto;display:block;" />`
+        : `<div class="wa-header-image"><span class="hicon">📷</span>Image Header</div>`;
+    } else if (headerType === 'DOCUMENT') {
+      headerHtml = `
+        <div class="wa-header-doc">
+          <div class="doc-icon">PDF</div>
+          <div><div class="doc-name">${fname || 'document.pdf'}</div><div class="doc-size">Document</div></div>
+        </div>`;
+    }
+    const formattedBody = (bodyText || '(No body text)')
+      .replace(/\{\{(\d+)\}\}/g, '<span style="color:var(--g-500);font-weight:700">{{$1}}</span>');
+    const timeStr = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+    document.getElementById('prev-header').innerHTML   = headerHtml;
+    document.getElementById('prev-body').innerHTML     = formattedBody;
+    document.getElementById('prev-footer').textContent = footerText;
+    document.getElementById('prev-footer').style.display = footerText ? 'block' : 'none';
+    document.getElementById('prev-time').textContent   = timeStr;
+    document.getElementById('preview-modal').classList.add('open');
+  }
+  function closePreview() { document.getElementById('preview-modal').classList.remove('open'); }
+  function closePreviewOnBg(e) { if (e.target === document.getElementById('preview-modal')) closePreview(); }
+
+  loadSidebarStatus();
+  loadTemplates();
+
+  async function loadSidebarUser() {
+    try {
+      const res  = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.logged_in) {
+        document.getElementById('sidebar-email').textContent = data.email;
+        document.getElementById('sidebar-user').style.display = 'block';
+        document.getElementById('hdr-email').textContent = data.email;
+        document.getElementById('hdr-avatar').textContent = data.email.charAt(0).toUpperCase();
+      }
+    } catch (e) {}
+  }
+  async function doLogout() {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    window.location.href = '/login';
+  }
+  loadSidebarUser();
+</script>
+</body>
+</html>

@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Contacts</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    /* File chosen bar */
+    .file-chosen {
+      display: none; align-items: center; gap: 12px;
+      padding: 12px 16px; background: #f0faf9;
+      border: 1px solid #a7f3d0; border-radius: var(--r-sm); margin-top: 14px;
+    }
+    .file-chosen.show { display: flex; }
+    .file-chosen .fname { flex: 1; font-size: 14px; color: var(--text); font-weight: 500; }
+    .btn-remove {
+      background: none; border: none;
+      color: #dc2626; font-size: 18px; cursor: pointer; line-height: 1;
+    }
+
+    /* Preview wrap */
+    .preview-wrap { display: none; margin-top: 18px; }
+    .preview-wrap.show { display: block; }
+    .preview-bar {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;
+    }
+    .preview-count { font-size: 13.5px; color: var(--text-2); }
+    .preview-count strong { color: var(--g-500); }
+
+    .action-row { display: flex; gap: 10px; margin-top: 18px; }
+
+    /* Contact file list */
+    .file-list { list-style: none; padding: 0; }
+    .file-item {
+      display: flex; align-items: center; gap: 12px;
+      padding: 13px 6px; border-bottom: 1px solid #f3f4f6;
+      transition: background var(--t);
+    }
+    .file-item:last-child { border-bottom: none; }
+    .file-item:hover { background: #f8fffe; border-radius: 8px; }
+    .file-num {
+      width: 26px; height: 26px; background: #f0faf9; color: var(--g-500);
+      border-radius: 50%; font-size: 11px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .file-ico   { font-size: 20px; flex-shrink: 0; }
+    .file-label { font-size: 14px; font-weight: 600; color: var(--text); flex: 1; }
+    .file-meta  { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+    .btn-file-del {
+      background: none; border: none;
+      color: #d1d5db; font-size: 16px; cursor: pointer;
+      padding: 5px 7px; border-radius: 6px; flex-shrink: 0;
+      transition: all var(--t);
+    }
+    .btn-file-del:hover { color: #dc2626; background: #fef2f2; }
+
+    .total-badge {
+      background: #d1fae5; color: #065f46;
+      font-size: 12px; font-weight: 700;
+      padding: 3px 12px; border-radius: 20px; margin-left: 8px;
+    }
+    .more-row td { color: var(--text-3); font-style: italic; }
+  </style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon">💬</div>
+    <div class="brand-text">
+      <div class="app-name">V³</div>
+      <div class="app-sub">the untold energy</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Setup</div>
+    <a href="/"          class="nav-item"><span class="nav-icon">⚡</span> WhatsApp Connect</a>
+    <div class="nav-label">Messaging</div>
+    <a href="/templates" class="nav-item"><span class="nav-icon">📋</span> Templates</a>
+    <a href="/contacts"  class="nav-item active"><span class="nav-icon">👥</span> Contacts</a>
+    <a href="/send"      class="nav-item"><span class="nav-icon">📤</span> Bulk Send</a>
+    <a href="/replies"   class="nav-item"><span class="nav-icon">💬</span> Replies</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="conn-status">
+      <span class="conn-dot" id="sidebar-dot"></span>
+      <span id="sidebar-status-text">Checking...</span>
+    </div>
+    <div id="sidebar-user" style="margin-top:10px;display:none">
+      <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="sidebar-email"></div>
+      <button onclick="doLogout()" style="width:100%;padding:7px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">
+        🚪 Sign Out
+      </button>
+    </div>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="page-hdr">
+    <div>
+      <div class="ph-title">Contacts</div>
+      <div class="ph-sub">Upload CSV or Excel files with phone numbers</div>
+    </div>
+    <div class="ph-user">
+      <div class="ph-email-chip">
+        <span class="ph-avatar" id="hdr-avatar">?</span>
+        <span class="ph-email" id="hdr-email"></span>
+      </div>
+      <button class="btn-logout" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+
+  <!-- Upload section -->
+  <div class="card card-wide">
+    <div class="card-hdr">
+      <div class="card-title">Upload CSV / Excel</div>
+    </div>
+
+    <div class="upload-zone" id="upload-zone"
+         onclick="document.getElementById('file-input').click()"
+         ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+      <input type="file" id="file-input" accept=".csv,.xlsx,.xls" onchange="onFileSelected(this)" />
+      <div class="upload-icon-big">📂</div>
+      <div class="upload-ttl">Drop your file here or browse</div>
+      <div class="upload-desc">Supports <strong>CSV</strong> and <strong>Excel (.xlsx)</strong></div>
+      <div class="upload-desc" style="margin-top:5px">
+        <strong>numbers</strong> only &nbsp;·&nbsp; or &nbsp;<strong>name</strong> + <strong>numbers</strong>
+      </div>
+      <div class="upload-desc" style="margin-top:3px;font-size:11.5px;color:#9ca3af">
+        Header: number / phone / mobile / numbers
+      </div>
+    </div>
+
+    <div class="file-chosen" id="file-chosen">
+      <span>📄</span>
+      <span class="fname" id="chosen-name"></span>
+      <button class="btn-remove" onclick="resetUpload()" title="Remove">✕</button>
+    </div>
+
+    <!-- Preview table -->
+    <div class="preview-wrap" id="preview-wrap">
+      <div class="preview-bar">
+        <span class="preview-count" id="preview-count"></span>
+      </div>
+      <div class="table-wrap" style="border-radius:var(--r-sm);">
+        <table id="preview-table">
+          <thead id="preview-thead"></thead>
+          <tbody id="preview-tbody"></tbody>
+        </table>
+      </div>
+      <div class="action-row">
+        <button class="btn btn-primary btn-lg" id="import-btn" onclick="importContacts()">
+          📥 Import Contacts
+        </button>
+        <button class="btn btn-outline" onclick="resetUpload()">Cancel</button>
+      </div>
+    </div>
+
+    <div class="alert" id="upload-alert"></div>
+  </div>
+
+  <!-- Saved contacts -->
+  <div class="card card-wide">
+    <div class="card-hdr">
+      <div>
+        <div class="card-title">
+          Saved Contacts
+          <span class="total-badge" id="total-badge" style="display:none"></span>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn btn-outline btn-sm" onclick="loadContacts()">↻ Refresh</button>
+        <button class="btn btn-danger btn-sm" id="clear-btn" onclick="clearContacts()">🗑 Clear All</button>
+      </div>
+    </div>
+    <div id="contacts-list">
+      <div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = '/api/contacts';
+  let parsedContacts  = [];
+  let currentFileName = '';
+
+  async function loadSidebarStatus() {
+    try {
+      const res  = await fetch('/api/whatsapp/status');
+      const data = await res.json();
+      const dot  = document.getElementById('sidebar-dot');
+      const txt  = document.getElementById('sidebar-status-text');
+      if (data.connected && data.data?.status === 'active') {
+        dot.classList.add('on'); txt.textContent = 'Connected';
+      } else {
+        dot.classList.remove('on'); txt.textContent = 'Not connected';
+      }
+    } catch (e) {}
+  }
+
+  function onDragOver(e)  { e.preventDefault(); document.getElementById('upload-zone').classList.add('drag-over'); }
+  function onDragLeave()  { document.getElementById('upload-zone').classList.remove('drag-over'); }
+  function onDrop(e) {
+    e.preventDefault();
+    document.getElementById('upload-zone').classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  }
+  function onFileSelected(input) { if (input.files[0]) handleFile(input.files[0]); }
+
+  async function handleFile(file) {
+    const allowed = ['.csv', '.xlsx', '.xls'];
+    const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+    if (!allowed.includes(ext)) {
+      showAlert('upload-alert', 'error', 'Only CSV and Excel (.xlsx) files are supported.');
+      return;
+    }
+    currentFileName = file.name;
+    document.getElementById('chosen-name').textContent = file.name;
+    document.getElementById('file-chosen').classList.add('show');
+    hideAlert('upload-alert');
+    document.getElementById('preview-wrap').classList.remove('show');
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res  = await fetch(`${API}/parse`, { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!data.success) { showAlert('upload-alert', 'error', data.error || 'Failed to parse file'); return; }
+      parsedContacts = data.contacts;
+      renderPreview(data.contacts);
+    } catch (e) { showAlert('upload-alert', 'error', 'Error reading file: ' + e.message); }
+  }
+
+  function renderPreview(contacts) {
+    if (!contacts.length) { showAlert('upload-alert', 'error', 'No valid phone numbers found.'); return; }
+    const hasName = contacts.some(c => c.name);
+    document.getElementById('preview-count').innerHTML =
+      `Found <strong>${contacts.length}</strong> contact${contacts.length !== 1 ? 's' : ''}`;
+    document.getElementById('preview-thead').innerHTML = hasName
+      ? '<tr><th>#</th><th>Name</th><th>Phone</th></tr>'
+      : '<tr><th>#</th><th>Phone</th></tr>';
+    const SHOW  = 10;
+    const rows  = contacts.slice(0, SHOW).map((c, i) =>
+      hasName
+        ? `<tr><td>${i+1}</td><td>${esc(c.name)}</td><td>${esc(c.phone)}</td></tr>`
+        : `<tr><td>${i+1}</td><td>${esc(c.phone)}</td></tr>`
+    );
+    if (contacts.length > SHOW) rows.push(hasName
+      ? `<tr class="more-row"><td colspan="3">… and ${contacts.length - SHOW} more</td></tr>`
+      : `<tr class="more-row"><td colspan="2">… and ${contacts.length - SHOW} more</td></tr>`);
+    document.getElementById('preview-tbody').innerHTML = rows.join('');
+    document.getElementById('preview-wrap').classList.add('show');
+    document.getElementById('import-btn').textContent = `📥 Import ${contacts.length} Contacts`;
+  }
+
+  async function importContacts() {
+    if (!parsedContacts.length) return;
+    const btn = document.getElementById('import-btn');
+    btn.disabled = true; btn.textContent = 'Importing...';
+    hideAlert('upload-alert');
+    try {
+      const res  = await fetch(`${API}/import`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contacts: parsedContacts, source_file: currentFileName }),
+      });
+      const data = await res.json();
+      if (data.success) { showAlert('upload-alert', 'success', data.message); resetUpload(); loadContacts(); }
+      else showAlert('upload-alert', 'error', data.error || 'Import failed');
+    } catch (e) { showAlert('upload-alert', 'error', 'Server error: ' + e.message); }
+    finally { btn.disabled = false; }
+  }
+
+  function resetUpload() {
+    parsedContacts = [];
+    document.getElementById('file-input').value = '';
+    document.getElementById('file-chosen').classList.remove('show');
+    document.getElementById('preview-wrap').classList.remove('show');
+    document.getElementById('preview-thead').innerHTML = '';
+    document.getElementById('preview-tbody').innerHTML = '';
+  }
+
+  async function loadContacts() {
+    document.getElementById('contacts-list').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>';
+    try {
+      const res   = await fetch(`${API}/files`);
+      const data  = await res.json();
+      const badge = document.getElementById('total-badge');
+      const total = data.files ? data.files.reduce((s, f) => s + f.count, 0) : 0;
+      if (total > 0) { badge.textContent = total + ' contacts'; badge.style.display = 'inline'; }
+      else badge.style.display = 'none';
+
+      if (!data.files || !data.files.length) {
+        document.getElementById('contacts-list').innerHTML =
+          '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No contacts yet.</div><div class="empty-sub">Upload a CSV or Excel file above.</div></div>';
+        document.getElementById('clear-btn').disabled = true;
+        return;
+      }
+      document.getElementById('clear-btn').disabled = false;
+      const items = data.files.map((f, i) => {
+        const date = f.imported_at ? new Date(f.imported_at).toLocaleDateString() : '';
+        return `
+          <li class="file-item">
+            <span class="file-num">${i+1}</span>
+            <span class="file-ico">📄</span>
+            <span class="file-label">${esc(f.file)}</span>
+            <span class="file-meta">${f.count} contacts${date ? ' · ' + date : ''}</span>
+            <button class="btn-file-del" onclick="deleteFile('${esc(f.file)}')" title="Delete">🗑</button>
+          </li>`;
+      }).join('');
+      document.getElementById('contacts-list').innerHTML = `<ul class="file-list">${items}</ul>`;
+    } catch (e) {
+      document.getElementById('contacts-list').innerHTML =
+        `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+    }
+  }
+
+  async function deleteFile(fileName) {
+    if (!confirm(`Delete all contacts from "${fileName}"?`)) return;
+    try {
+      const res  = await fetch(`${API}/file?name=${encodeURIComponent(fileName)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) loadContacts();
+    } catch (e) {}
+  }
+
+  async function clearContacts() {
+    if (!confirm('Delete ALL saved contacts? This cannot be undone.')) return;
+    try {
+      const res  = await fetch(`${API}/clear`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) loadContacts();
+    } catch (e) {}
+  }
+
+  function showAlert(id, type, msg) {
+    const el = document.getElementById(id);
+    el.className = `alert ${type}`; el.textContent = msg; el.style.display = 'block';
+  }
+  function hideAlert(id) { document.getElementById(id).style.display = 'none'; }
+  function esc(str) {
+    return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  loadSidebarStatus();
+  loadContacts();
+
+  async function loadSidebarUser() {
+    try {
+      const res  = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.logged_in) {
+        document.getElementById('sidebar-email').textContent = data.email;
+        document.getElementById('sidebar-user').style.display = 'block';
+        document.getElementById('hdr-email').textContent = data.email;
+        document.getElementById('hdr-avatar').textContent = data.email.charAt(0).toUpperCase();
+      }
+    } catch (e) {}
+  }
+  async function doLogout() {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    window.location.href = '/login';
+  }
+  loadSidebarUser();
+</script>
+</body>
+</html>

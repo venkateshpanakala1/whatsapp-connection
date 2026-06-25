@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Bulk Send</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    /* Run button */
+    .btn-run {
+      width: 100%; padding: 15px; margin-top: 8px;
+      background: var(--g-300); color: #fff; border: none;
+      border-radius: 10px; font-size: 16px; font-weight: 800;
+      cursor: pointer; font-family: inherit;
+      transition: all var(--t);
+      box-shadow: 0 4px 16px rgba(37,211,102,0.4);
+      letter-spacing: 0.2px;
+    }
+    .btn-run:hover:not(:disabled) {
+      background: #1eb155;
+      box-shadow: 0 6px 24px rgba(37,211,102,0.5);
+      transform: translateY(-2px);
+    }
+    .btn-run:active:not(:disabled) { transform: scale(0.98); }
+    .btn-run:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+    /* Control buttons */
+    .ctrl-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
+    .btn-ctrl {
+      padding: 12px; border-radius: 10px;
+      font-size: 14px; font-weight: 700; cursor: pointer;
+      font-family: inherit; transition: all var(--t); border: none;
+    }
+    .btn-ctrl:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-pause  { background: #fef3c7; color: #92400e; border: 1.5px solid #fcd34d; }
+    .btn-pause:hover:not(:disabled)  { background: #fde68a; }
+    .btn-resume { background: #d1fae5; color: #065f46; border: 1.5px solid #6ee7b7; }
+    .btn-resume:hover:not(:disabled) { background: #a7f3d0; }
+
+    /* Progress section */
+    .progress-section { display: none; }
+    .progress-section.show { display: block; }
+
+    .prog-stats {
+      display: flex; justify-content: space-between;
+      font-size: 13px; color: var(--text-2); margin-bottom: 8px;
+    }
+
+    .done-banner {
+      display: none; margin-top: 18px; padding: 14px 18px;
+      background: #d1fae5; border: 1px solid #6ee7b7;
+      border-radius: var(--r); font-size: 14px;
+      color: #065f46; font-weight: 600; text-align: center;
+    }
+    .done-banner.show { display: block; animation: fadeUp 0.3s ease; }
+
+    .error-list {
+      margin-top: 14px; padding: 12px 16px;
+      background: #fef2f2; border: 1px solid #fca5a5;
+      border-radius: var(--r); font-size: 12.5px; color: #991b1b;
+      display: none;
+    }
+    .error-list.show { display: block; }
+    .error-list p { margin-bottom: 3px; }
+
+    .reconnect-banner {
+      background: #fef9c3; border: 1.5px solid #fde047;
+      border-radius: var(--r); padding: 12px 18px;
+      font-size: 13px; color: #713f12;
+      margin-bottom: 18px; display: none;
+      align-items: center; gap: 10px;
+    }
+    .reconnect-banner.show { display: flex; animation: fadeUp 0.3s ease; }
+  </style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon">💬</div>
+    <div class="brand-text">
+      <div class="app-name">V³</div>
+      <div class="app-sub">the untold energy</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Setup</div>
+    <a href="/"          class="nav-item"><span class="nav-icon">⚡</span> WhatsApp Connect</a>
+    <div class="nav-label">Messaging</div>
+    <a href="/templates" class="nav-item"><span class="nav-icon">📋</span> Templates</a>
+    <a href="/contacts"  class="nav-item"><span class="nav-icon">👥</span> Contacts</a>
+    <a href="/send"      class="nav-item active"><span class="nav-icon">📤</span> Bulk Send</a>
+    <a href="/replies"   class="nav-item"><span class="nav-icon">💬</span> Replies</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="conn-status">
+      <span class="conn-dot" id="sidebar-dot"></span>
+      <span id="sidebar-status-text">Checking...</span>
+    </div>
+    <div id="sidebar-user" style="margin-top:10px;display:none">
+      <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="sidebar-email"></div>
+      <button onclick="doLogout()" style="width:100%;padding:7px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">
+        🚪 Sign Out
+      </button>
+    </div>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="page-hdr">
+    <div>
+      <div class="ph-title">Bulk Send</div>
+      <div class="ph-sub">Send WhatsApp template messages to your contact lists</div>
+    </div>
+    <div class="ph-user">
+      <div class="ph-email-chip">
+        <span class="ph-avatar" id="hdr-avatar">?</span>
+        <span class="ph-email" id="hdr-email"></span>
+      </div>
+      <button class="btn-logout" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+
+  <!-- Reconnect banner -->
+  <div class="reconnect-banner" id="reconnect-banner">
+    <span>⚠️</span>
+    <span>A send job is still running in the background. Reconnecting...</span>
+  </div>
+
+  <!-- Config form -->
+  <div class="card card-mid" id="config-section">
+    <div class="card-hdr">
+      <div class="card-title">Configure &amp; Run</div>
+    </div>
+
+    <div class="form-group">
+      <label>Contacts File</label>
+      <select id="file-select" onchange="onFileChange()">
+        <option value="">— Choose a file —</option>
+      </select>
+      <div class="info-box" id="file-info"></div>
+    </div>
+
+    <div class="form-group">
+      <label>Template <span style="color:var(--text-3);font-weight:400;text-transform:none;letter-spacing:0">(last 5)</span></label>
+      <select id="template-select" onchange="onTemplateChange()">
+        <option value="">— Choose a template —</option>
+      </select>
+      <div class="info-box" id="template-info"></div>
+    </div>
+
+    <div class="form-group">
+      <label>Delay Between Messages</label>
+      <select id="delay-select">
+        <option value="3"  selected>3 seconds</option>
+        <option value="4">4 seconds</option>
+        <option value="5">5 seconds</option>
+        <option value="6">6 seconds</option>
+        <option value="7">7 seconds</option>
+        <option value="8">8 seconds</option>
+        <option value="9">9 seconds</option>
+        <option value="10">10 seconds</option>
+        <option value="11">11 seconds</option>
+        <option value="12">12 seconds</option>
+        <option value="13">13 seconds</option>
+        <option value="14">14 seconds</option>
+        <option value="15">15 seconds</option>
+      </select>
+    </div>
+
+    <button class="btn-run" id="run-btn" onclick="runSend()" disabled>
+      📤 &nbsp;Run Bulk Send
+    </button>
+    <div class="alert" id="form-alert"></div>
+  </div>
+
+  <!-- Progress section -->
+  <div class="card card-mid progress-section" id="progress-section">
+    <div class="card-hdr" style="margin-bottom:16px">
+      <div class="card-title">Live Progress</div>
+      <span class="status-pill pill-running" id="status-pill">Running</span>
+    </div>
+
+    <div class="prog-stats">
+      <span id="prog-label">Starting...</span>
+      <span id="prog-pct" style="font-weight:700;color:var(--text)">0%</span>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar" id="progress-bar" style="width:0%"></div>
+    </div>
+
+    <div class="stat-grid" style="margin-top:20px;margin-bottom:16px">
+      <div class="stat-card s-total">
+        <div class="stat-num" id="stat-total">0</div>
+        <div class="stat-lbl">Total</div>
+      </div>
+      <div class="stat-card s-sent">
+        <div class="stat-num" id="stat-sent">0</div>
+        <div class="stat-lbl">Sent</div>
+      </div>
+      <div class="stat-card s-failed">
+        <div class="stat-num" id="stat-failed">0</div>
+        <div class="stat-lbl">Failed</div>
+      </div>
+    </div>
+
+    <div class="ctrl-row">
+      <button class="btn-ctrl btn-pause"  id="pause-btn"  onclick="pauseJob()">⏸ Pause</button>
+      <button class="btn-ctrl btn-resume" id="resume-btn" onclick="resumeJob()" disabled>▶ Resume</button>
+    </div>
+
+    <div class="done-banner" id="done-banner"></div>
+    <div class="error-list"  id="error-list"></div>
+  </div>
+</div>
+
+<script>
+  const API = '/api/send';
+  let filesData     = [];
+  let templatesData = [];
+  let eventSource   = null;
+  let activeJobId   = null;
+
+  async function loadSidebarStatus() {
+    try {
+      const res  = await fetch('/api/whatsapp/status');
+      const data = await res.json();
+      const dot  = document.getElementById('sidebar-dot');
+      const txt  = document.getElementById('sidebar-status-text');
+      if (data.connected && data.data?.status === 'active') {
+        dot.classList.add('on'); txt.textContent = 'Connected';
+      } else {
+        dot.classList.remove('on'); txt.textContent = 'Not connected';
+      }
+    } catch (e) {}
+  }
+
+  async function loadFiles() {
+    const res  = await fetch('/api/contacts/files');
+    const data = await res.json();
+    filesData  = data.files || [];
+    const sel  = document.getElementById('file-select');
+    filesData.forEach(f => {
+      const opt = document.createElement('option');
+      opt.value = f.file;
+      opt.textContent = `${f.file}  (${f.count} contacts)`;
+      sel.appendChild(opt);
+    });
+  }
+
+  async function loadTemplates() {
+    const res     = await fetch(`${API}/templates`);
+    const data    = await res.json();
+    templatesData = data.templates || [];
+    const sel     = document.getElementById('template-select');
+    templatesData.forEach(t => {
+      const opt = document.createElement('option');
+      opt.value = JSON.stringify({ name: t.name, lang: t.language });
+      opt.textContent = `${t.name}  [${t.language}]  — ${t.status}`;
+      sel.appendChild(opt);
+    });
+  }
+
+  function onFileChange() {
+    const val  = document.getElementById('file-select').value;
+    const info = document.getElementById('file-info');
+    if (!val) { info.classList.remove('show'); checkReady(); return; }
+    const f = filesData.find(x => x.file === val);
+    if (f) { info.innerHTML = `<strong>${f.count}</strong> contacts will receive the message`; info.classList.add('show'); }
+    checkReady();
+  }
+
+  function onTemplateChange() {
+    const val  = document.getElementById('template-select').value;
+    const info = document.getElementById('template-info');
+    if (!val) { info.classList.remove('show'); checkReady(); return; }
+    const { name } = JSON.parse(val);
+    const tmpl = templatesData.find(x => x.name === name);
+    if (tmpl) {
+      const body = tmpl.components?.find(c => c.type === 'BODY')?.text || '';
+      info.innerHTML = `<strong>${tmpl.name}</strong> &middot; ${tmpl.category} &middot; ${tmpl.language}
+        <div style="color:var(--text-2);margin-top:5px;font-size:12.5px">${body.substring(0,120)}${body.length>120?'…':''}</div>`;
+      info.classList.add('show');
+    }
+    checkReady();
+  }
+
+  function checkReady() {
+    const f = document.getElementById('file-select').value;
+    const t = document.getElementById('template-select').value;
+    document.getElementById('run-btn').disabled = !(f && t);
+  }
+
+  async function runSend() {
+    const source_file = document.getElementById('file-select').value;
+    const tmplVal     = document.getElementById('template-select').value;
+    const delay       = parseInt(document.getElementById('delay-select').value);
+    if (!source_file || !tmplVal) return;
+    const { name: template_name, lang: template_lang } = JSON.parse(tmplVal);
+    document.getElementById('run-btn').disabled    = true;
+    document.getElementById('run-btn').textContent = '⏳ Starting...';
+    document.getElementById('form-alert').style.display = 'none';
+    document.getElementById('done-banner').classList.remove('show');
+    document.getElementById('error-list').classList.remove('show');
+    try {
+      const res  = await fetch(`${API}/start`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source_file, template_name, template_lang, delay }),
+      });
+      const data = await res.json();
+      if (!data.success) { showError(data.error); resetBtn(); return; }
+      activeJobId = data.job_id;
+      localStorage.setItem('wa_job_id', activeJobId);
+      document.getElementById('stat-total').textContent = data.total;
+      document.getElementById('progress-section').classList.add('show');
+      document.getElementById('run-btn').textContent = '📤 Sending...';
+      connectSSE(activeJobId);
+    } catch (e) { showError('Server error: ' + e.message); resetBtn(); }
+  }
+
+  function connectSSE(jobId) {
+    if (eventSource) eventSource.close();
+    eventSource = new EventSource(`${API}/progress/${jobId}`);
+    eventSource.onmessage = e => {
+      const d = JSON.parse(e.data);
+      updateProgress(d);
+      if (d.status === 'done') { eventSource.close(); onDone(d); }
+    };
+    eventSource.onerror = () => { eventSource.close(); };
+  }
+
+  function updateProgress(d) {
+    const pct  = d.total ? Math.round((d.current / d.total) * 100) : 0;
+    const bar  = document.getElementById('progress-bar');
+    const pill = document.getElementById('status-pill');
+    bar.style.width = pct + '%';
+    document.getElementById('prog-pct').textContent    = pct + '%';
+    document.getElementById('stat-sent').textContent   = d.sent;
+    document.getElementById('stat-failed').textContent = d.failed;
+    document.getElementById('stat-total').textContent  = d.total;
+    if (d.status === 'paused') {
+      bar.classList.add('paused');
+      document.getElementById('prog-label').textContent = `Paused at ${d.current} of ${d.total}`;
+      pill.className = 'status-pill pill-paused'; pill.textContent = 'Paused';
+      document.getElementById('pause-btn').disabled  = true;
+      document.getElementById('resume-btn').disabled = false;
+    } else if (d.status === 'running') {
+      bar.classList.remove('paused');
+      document.getElementById('prog-label').textContent = `Sending ${d.current} of ${d.total}…`;
+      pill.className = 'status-pill pill-running'; pill.textContent = 'Running';
+      document.getElementById('pause-btn').disabled  = false;
+      document.getElementById('resume-btn').disabled = true;
+    }
+  }
+
+  function onDone(d) {
+    const pill = document.getElementById('status-pill');
+    pill.className = 'status-pill pill-done'; pill.textContent = 'Done ✓';
+    document.getElementById('prog-label').textContent    = 'Complete';
+    document.getElementById('progress-bar').style.width  = '100%';
+    document.getElementById('progress-bar').classList.remove('paused');
+    document.getElementById('pause-btn').disabled  = true;
+    document.getElementById('resume-btn').disabled = true;
+    const banner = document.getElementById('done-banner');
+    banner.textContent = `🎉 Done! ${d.sent} messages sent successfully${d.failed ? `, ${d.failed} failed` : ''}.`;
+    banner.classList.add('show');
+    if (d.errors && d.errors.length) {
+      const el = document.getElementById('error-list');
+      el.innerHTML = '<strong>Errors (sample):</strong><br>' + d.errors.map(e => `<p>${e}</p>`).join('');
+      el.classList.add('show');
+    }
+    localStorage.removeItem('wa_job_id');
+    activeJobId = null;
+    resetBtn();
+  }
+
+  async function pauseJob() {
+    if (!activeJobId) return;
+    await fetch(`${API}/pause/${activeJobId}`, { method: 'POST' });
+    document.getElementById('pause-btn').disabled  = true;
+    document.getElementById('resume-btn').disabled = false;
+  }
+
+  async function resumeJob() {
+    if (!activeJobId) return;
+    await fetch(`${API}/resume/${activeJobId}`, { method: 'POST' });
+    document.getElementById('pause-btn').disabled  = false;
+    document.getElementById('resume-btn').disabled = true;
+  }
+
+  async function tryReconnect() {
+    const savedId = localStorage.getItem('wa_job_id');
+    if (!savedId) return;
+    const res  = await fetch(`${API}/status/${savedId}`);
+    const data = await res.json();
+    if (!data.found || data.status === 'done') { localStorage.removeItem('wa_job_id'); return; }
+    document.getElementById('reconnect-banner').classList.add('show');
+    activeJobId = savedId;
+    document.getElementById('stat-total').textContent  = data.total;
+    document.getElementById('stat-sent').textContent   = data.sent;
+    document.getElementById('stat-failed').textContent = data.failed;
+    document.getElementById('progress-section').classList.add('show');
+    document.getElementById('run-btn').disabled    = true;
+    document.getElementById('run-btn').textContent = '📤 Sending...';
+    updateProgress(data);
+    setTimeout(() => { document.getElementById('reconnect-banner').classList.remove('show'); }, 3000);
+    connectSSE(savedId);
+  }
+
+  function resetBtn() {
+    const btn = document.getElementById('run-btn');
+    btn.innerHTML = '📤 &nbsp;Run Bulk Send';
+    btn.disabled  = false;
+    checkReady();
+  }
+
+  function showError(msg) {
+    const el = document.getElementById('form-alert');
+    el.textContent = msg; el.className = 'alert error'; el.style.display = 'block';
+  }
+
+  loadSidebarStatus();
+  loadFiles();
+  loadTemplates();
+  tryReconnect();
+
+  async function loadSidebarUser() {
+    try {
+      const res  = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.logged_in) {
+        document.getElementById('sidebar-email').textContent = data.email;
+        document.getElementById('sidebar-user').style.display = 'block';
+        document.getElementById('hdr-email').textContent = data.email;
+        document.getElementById('hdr-avatar').textContent = data.email.charAt(0).toUpperCase();
+      }
+    } catch (e) {}
+  }
+  async function doLogout() {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    window.location.href = '/login';
+  }
+  loadSidebarUser();
+</script>
+</body>
+</html>

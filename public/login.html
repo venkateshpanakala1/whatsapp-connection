@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Login — V³</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      height: 100vh;
+      overflow-y: auto;
+      background: linear-gradient(160deg, #064e45 0%, #075e54 50%, #0a7a6a 100%);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 32px 20px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .login-wrap {
+      width: 100%; max-width: 440px;
+      display: flex; flex-direction: column; align-items: center;
+      animation: slideUp 0.45s cubic-bezier(0.34,1.56,0.64,1) both;
+    }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(32px) scale(0.96); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* Brand area */
+    .brand {
+      text-align: center; margin-bottom: 32px;
+    }
+    .brand-logo {
+      width: 68px; height: 68px;
+      background: rgba(255,255,255,0.14);
+      border-radius: 20px; margin: 0 auto 16px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 34px; backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.22);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+    }
+    .brand-name { font-size: 26px; font-weight: 800; color: #fff; letter-spacing: -0.5px; }
+    .brand-sub  { font-size: 13px; color: rgba(255,255,255,0.55); margin-top: 5px; }
+
+    /* Card — acts as the table the rat hides behind */
+    .card {
+      width: 100%;
+      background: #fff;
+      border-radius: 22px;
+      padding: 40px 36px;
+      box-shadow: 0 28px 64px rgba(0,0,0,0.28), 0 8px 20px rgba(0,0,0,0.1);
+      position: relative;
+      z-index: 5;
+      overflow: visible;
+    }
+
+    .card-title {
+      font-size: 20px; font-weight: 800; color: #111827;
+      margin-bottom: 4px; letter-spacing: -0.4px;
+    }
+    .card-sub {
+      font-size: 13px; color: #6b7280; margin-bottom: 28px; line-height: 1.5;
+    }
+    .card-sub span { color: #128c7e; font-weight: 600; }
+
+    /* Form */
+    .form-group { margin-bottom: 16px; }
+    .form-label {
+      display: block; font-size: 11.5px; font-weight: 700;
+      color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px;
+      margin-bottom: 7px;
+    }
+    .form-input {
+      width: 100%; padding: 12px 16px;
+      border: 1.5px solid #e5e7eb; border-radius: 10px;
+      font-size: 14.5px; font-family: inherit; color: #111827;
+      background: #fafafa; outline: none;
+      transition: all 0.2s;
+    }
+    .form-input:focus {
+      border-color: #128c7e;
+      box-shadow: 0 0 0 3px rgba(18,140,126,0.12);
+      background: #fff;
+    }
+    .form-input::placeholder { color: #9ca3af; }
+
+    /* Submit button */
+    .btn-login {
+      width: 100%; padding: 14px;
+      background: linear-gradient(135deg, #128c7e 0%, #25d366 100%);
+      color: #fff; border: none; border-radius: 10px;
+      font-size: 15px; font-weight: 700; cursor: pointer;
+      font-family: inherit; margin-top: 8px;
+      transition: all 0.2s;
+      box-shadow: 0 4px 16px rgba(18,140,126,0.4);
+      letter-spacing: 0.2px;
+    }
+    .btn-login:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(18,140,126,0.5);
+    }
+    .btn-login:active { transform: scale(0.98); }
+    .btn-login:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+    /* Alert */
+    .alert {
+      display: none; padding: 12px 16px; border-radius: 10px;
+      font-size: 13px; margin-top: 16px; border-left: 4px solid;
+      line-height: 1.5;
+    }
+    .alert.success { display: block; background: #f0fdf4; color: #166534; border-color: #4ade80; }
+    .alert.error   { display: block; background: #fef2f2; color: #991b1b; border-color: #f87171; }
+    .alert.info    { display: block; background: #eff6ff; color: #1e40af; border-color: #60a5fa; }
+
+    /* Footer note */
+    .footer-note {
+      text-align: center; margin-top: 22px;
+      font-size: 12px; color: rgba(255,255,255,0.48);
+      line-height: 1.6; width: 100%;
+    }
+
+    /* Password toggle */
+    .input-wrap { position: relative; }
+    .btn-eye {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer;
+      font-size: 16px; color: #9ca3af; padding: 4px;
+      transition: color 0.15s;
+    }
+    .btn-eye:hover { color: #128c7e; }
+    .input-wrap input { padding-right: 44px; }
+
+    /* Divider */
+    .divider {
+      display: flex; align-items: center; gap: 12px;
+      margin: 22px 0; color: #d1d5db; font-size: 12px;
+    }
+    .divider::before, .divider::after {
+      content: ''; flex: 1; height: 1px; background: #e5e7eb;
+    }
+
+    /* ── Rat hide-and-seek: slides LEFT ↔ RIGHT behind the card ── */
+    .login-wrap { position: relative; }
+
+    /* rat-zone sits INSIDE the card's vertical bounds (card z-index:5 covers it).
+       translateX slides it left or right so the face pokes out past the card's edges. */
+    .rat-zone {
+      position: absolute;
+      bottom: 54px;              /* keeps zone within card's Y range */
+      left: calc(50% - 100px);  /* centre the 200px-wide zone */
+      z-index: 2;
+      width: 200px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+      transform: translateX(0);  /* hidden at centre; animation drives it */
+    }
+
+    /* ── Slow left-to-right traversal loop ── */
+    .rat-zone.rat-peeking {
+      animation: ratSide 14s ease-in-out infinite;
+    }
+    @keyframes ratSide {
+      /* hold at left peek */
+      0%,10%   { transform: translateX(-262px); animation-timing-function: ease-in-out; }
+      /* arrive at right peek */
+      40%,60%  { transform: translateX(262px);  animation-timing-function: ease-in-out; }
+      /* back to left */
+      90%,100% { transform: translateX(-262px); }
+    }
+
+    /* ── Login-click reveal: slide fully to the left and stay ── */
+    .rat-zone.rat-reveal {
+      animation: ratReveal 0.85s cubic-bezier(0.34,1.56,0.64,1) forwards;
+    }
+    @keyframes ratReveal {
+      from { transform: translateX(0);     }
+      to   { transform: translateX(-262px);}
+    }
+
+    /* Speech bubble — above the rat face, arrow pointing down */
+    .rat-bubble {
+      background: #fff;
+      border: 2.5px solid #128c7e;
+      border-radius: 14px;
+      padding: 9px 13px;
+      font-size: 12px; font-weight: 700;
+      color: #064e45; line-height: 1.6;
+      box-shadow: 0 6px 22px rgba(0,0,0,0.2);
+      position: relative;
+      white-space: nowrap;
+      text-align: center;
+    }
+    /* Bubble tail — points DOWN toward rat face */
+    .rat-bubble::after {
+      content: '';
+      position: absolute;
+      bottom: -11px; left: 50%;
+      transform: translateX(-50%);
+      border-width: 11px 8px 0 8px;
+      border-style: solid;
+      border-color: #128c7e transparent transparent transparent;
+    }
+    .rat-bubble::before {
+      content: '';
+      position: absolute;
+      bottom: -8px; left: 50%;
+      transform: translateX(-50%);
+      border-width: 8px 6px 0 6px;
+      border-style: solid;
+      border-color: #fff transparent transparent transparent;
+      z-index: 1;
+    }
+
+    /* Gentle idle bob on the SVG element itself */
+    .rat-svg {
+      display: block;
+      animation: ratBob 2.6s ease-in-out 1.2s infinite;
+    }
+    @keyframes ratBob {
+      0%,100% { transform: translateY(0);   }
+      48%     { transform: translateY(-6px);}
+    }
+
+    /* Eye blink */
+    .rat-eye-g {
+      transform-box: fill-box;
+      transform-origin: center center;
+      animation: eyeBlink 5s ease-in-out 3s infinite;
+    }
+    @keyframes eyeBlink {
+      0%,82%,100% { transform: scaleY(1);    }
+      88%,94%     { transform: scaleY(0.07); }
+    }
+
+    /* Hide rat on small screens */
+    @media (max-width: 720px) { .rat-zone { display: none; } }
+  </style>
+</head>
+<body>
+
+<div class="login-wrap">
+
+  <!-- Brand -->
+  <div class="brand">
+    <div class="brand-logo">💬</div>
+    <div class="brand-name">V³</div>
+    <div class="brand-sub">the untold energy</div>
+  </div>
+
+  <!-- 🐀 Rat slides LEFT ↔ RIGHT behind the card (z-index:2 < card z-index:5).
+       Face peeks out from each side of the card as it slowly traverses. -->
+  <div class="rat-zone" id="rat-zone">
+
+    <!-- Speech bubble above the face -->
+    <div class="rat-bubble" id="rat-bubble">
+      psst! 👀<br>enter your creds!
+    </div>
+
+    <!-- Pretty front-facing rat SVG — face centred, always looking at viewer -->
+    <svg class="rat-svg" xmlns="http://www.w3.org/2000/svg"
+         viewBox="0 0 160 130" width="160" height="130">
+      <defs>
+        <!-- Head fur: warm 3-D lit from top-left -->
+        <radialGradient id="rHG" cx="36%" cy="24%" r="70%">
+          <stop offset="0%"   stop-color="#faebd0"/>
+          <stop offset="32%"  stop-color="#dbb882"/>
+          <stop offset="68%"  stop-color="#a87c48"/>
+          <stop offset="100%" stop-color="#6a4a28"/>
+        </radialGradient>
+        <!-- Ear outer: warm gold-brown -->
+        <radialGradient id="rEG" cx="35%" cy="28%" r="65%">
+          <stop offset="0%"   stop-color="#e8c890"/>
+          <stop offset="55%"  stop-color="#b88c50"/>
+          <stop offset="100%" stop-color="#7a5428"/>
+        </radialGradient>
+        <!-- Ear inner: soft peachy-pink -->
+        <radialGradient id="rEiG" cx="38%" cy="32%" r="58%">
+          <stop offset="0%"   stop-color="#ffe0ea"/>
+          <stop offset="50%"  stop-color="#f4a0b8"/>
+          <stop offset="100%" stop-color="#c8607a"/>
+        </radialGradient>
+        <!-- Iris: deep violet-black with depth -->
+        <radialGradient id="rIrG" cx="30%" cy="22%" r="72%">
+          <stop offset="0%"   stop-color="#7050c0"/>
+          <stop offset="35%"  stop-color="#2a1550"/>
+          <stop offset="100%" stop-color="#08040e"/>
+        </radialGradient>
+        <!-- Nose: shiny pink -->
+        <radialGradient id="rNG" cx="33%" cy="25%" r="66%">
+          <stop offset="0%"   stop-color="#ffd8e4"/>
+          <stop offset="55%"  stop-color="#f080a0"/>
+          <stop offset="100%" stop-color="#b84864"/>
+        </radialGradient>
+        <!-- Drop shadow -->
+        <filter id="rSF" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#00000048"/>
+        </filter>
+        <!-- Eye soft-glow -->
+        <filter id="rEF" x="-60%" y="-60%" width="220%" height="220%">
+          <feGaussianBlur stdDeviation="0.6" result="b"/>
+          <feComposite in="SourceGraphic" in2="b" operator="over"/>
+        </filter>
+      </defs>
+
+      <!-- ══ EARS — large, round, expressive ══ -->
+      <!-- Left ear (tilted slightly outward) -->
+      <ellipse cx="30"  cy="48" rx="22" ry="27" fill="url(#rEG)"  transform="rotate(-12,30,48)" filter="url(#rSF)"/>
+      <ellipse cx="30"  cy="48" rx="14" ry="17" fill="url(#rEiG)" transform="rotate(-12,30,48)"/>
+      <ellipse cx="25"  cy="41" rx="5"  ry="6"  fill="rgba(255,255,255,0.26)" transform="rotate(-12,25,41)"/>
+      <!-- Right ear (tilted slightly outward) -->
+      <ellipse cx="130" cy="48" rx="22" ry="27" fill="url(#rEG)"  transform="rotate(12,130,48)"  filter="url(#rSF)"/>
+      <ellipse cx="130" cy="48" rx="14" ry="17" fill="url(#rEiG)" transform="rotate(12,130,48)"/>
+      <ellipse cx="135" cy="41" rx="5"  ry="6"  fill="rgba(255,255,255,0.26)" transform="rotate(12,135,41)"/>
+
+      <!-- ══ HEAD — plump, round ══ -->
+      <circle cx="80" cy="83" r="44" fill="url(#rHG)" filter="url(#rSF)"/>
+      <!-- Top specular highlight -->
+      <ellipse cx="62" cy="65" rx="18" ry="10" fill="rgba(255,252,235,0.28)" transform="rotate(-22,62,65)"/>
+      <!-- Subtle fur parting stripe -->
+      <path d="M80 44 Q84 62 80 78" stroke="rgba(120,85,35,0.18)" stroke-width="3" fill="none" stroke-linecap="round"/>
+
+      <!-- ══ EYEBROWS — thin arches for expressiveness ══ -->
+      <path d="M54 65 Q63 60 72 65" stroke="#8a6030" stroke-width="2.2" fill="none" stroke-linecap="round" opacity="0.7"/>
+      <path d="M88 65 Q97 60 106 65" stroke="#8a6030" stroke-width="2.2" fill="none" stroke-linecap="round" opacity="0.7"/>
+
+      <!-- ══ EYES — large, shiny, curious ══ -->
+      <g class="rat-eye-g" filter="url(#rEF)">
+        <!-- Left eye -->
+        <circle cx="63" cy="80" r="12" fill="#0e0818"/>
+        <circle cx="63" cy="80" r="9"  fill="url(#rIrG)"/>
+        <circle cx="59" cy="76" r="4.5" fill="rgba(255,255,255,0.96)"/>
+        <circle cx="67" cy="84" r="1.8" fill="rgba(255,255,255,0.42)"/>
+        <circle cx="63" cy="80" r="12" fill="none" stroke="#2a1020" stroke-width="0.8" opacity="0.5"/>
+        <!-- Right eye -->
+        <circle cx="97" cy="80" r="12" fill="#0e0818"/>
+        <circle cx="97" cy="80" r="9"  fill="url(#rIrG)"/>
+        <circle cx="93" cy="76" r="4.5" fill="rgba(255,255,255,0.96)"/>
+        <circle cx="101" cy="84" r="1.8" fill="rgba(255,255,255,0.42)"/>
+        <circle cx="97" cy="80" r="12" fill="none" stroke="#2a1020" stroke-width="0.8" opacity="0.5"/>
+      </g>
+
+      <!-- ══ ROSY CHEEKS ══ -->
+      <ellipse cx="42"  cy="96" rx="14" ry="9" fill="rgba(255,90,130,0.18)"/>
+      <ellipse cx="118" cy="96" rx="14" ry="9" fill="rgba(255,90,130,0.18)"/>
+
+      <!-- ══ NOSE — shiny button ══ -->
+      <ellipse cx="80" cy="102" rx="9"  ry="7"   fill="url(#rNG)"/>
+      <ellipse cx="77" cy="99"  rx="3"  ry="2.2" fill="rgba(255,255,255,0.5)"/>
+      <circle  cx="76" cy="104" r="2.2" fill="#a03050"/>
+      <circle  cx="84" cy="104" r="2.2" fill="#a03050"/>
+      <!-- Philtrum -->
+      <path d="M80 108 L78 113 M80 108 L82 113" stroke="#c87090" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+
+      <!-- ══ BIG JOYFUL GRIN ══ -->
+      <path d="M60 115 Q80 130 100 115" stroke="#d06880" stroke-width="2.8" fill="none" stroke-linecap="round"/>
+
+      <!-- ══ WHISKERS — 3 per side, fanning out ══ -->
+      <!-- Left whiskers -->
+      <line x1="71" y1="99"  x2="2"  y2="82"  stroke="#e8d8b8" stroke-width="1.4" opacity="0.88"/>
+      <line x1="71" y1="103" x2="0"  y2="103" stroke="#e8d8b8" stroke-width="1.4" opacity="0.88"/>
+      <line x1="71" y1="107" x2="2"  y2="124" stroke="#e8d8b8" stroke-width="1.4" opacity="0.88"/>
+      <!-- Right whiskers -->
+      <line x1="89" y1="99"  x2="158" y2="82"  stroke="#e8d8b8" stroke-width="1.4" opacity="0.88"/>
+      <line x1="89" y1="103" x2="160" y2="103" stroke="#e8d8b8" stroke-width="1.4" opacity="0.88"/>
+      <line x1="89" y1="107" x2="158" y2="124" stroke="#e8d8b8" stroke-width="1.4" opacity="0.88"/>
+    </svg>
+
+  </div><!-- /rat-zone -->
+
+  <!-- Card -->
+  <div class="card">
+    <div class="card-title">Welcome</div>
+    <div class="card-sub">
+      Sign in with your email. <span>New email? We'll create your account automatically.</span>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Email Address</label>
+      <input type="email" class="form-input" id="email"
+             placeholder="you@example.com" autocomplete="email" />
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Password</label>
+      <div class="input-wrap">
+        <input type="password" class="form-input" id="password"
+               placeholder="Enter your password" autocomplete="current-password"
+               onkeydown="if(event.key==='Enter') doLogin()" />
+        <button class="btn-eye" onclick="togglePwd()" tabindex="-1" id="eye-btn">👁</button>
+      </div>
+    </div>
+
+    <button class="btn-login" id="login-btn" onclick="doLogin()">
+      Sign In
+    </button>
+
+    <div class="alert" id="login-alert"></div>
+  </div>
+
+  <div class="footer-note">
+    First time? Just enter any email &amp; password to create your account.
+  </div>
+
+</div>
+
+<script>
+  function togglePwd() {
+    const inp = document.getElementById('password');
+    const btn = document.getElementById('eye-btn');
+    if (inp.type === 'password') { inp.type = 'text';     btn.textContent = '🙈'; }
+    else                         { inp.type = 'password'; btn.textContent = '👁'; }
+  }
+
+  /* ── Rat hide-and-seek controller ── */
+  const ratZone   = document.getElementById('rat-zone');
+  const ratBubble = document.getElementById('rat-bubble');
+
+  function ratStartPeeking() {
+    ratZone.classList.remove('rat-reveal');
+    void ratZone.offsetWidth; // force reflow so animation restarts
+    ratZone.classList.add('rat-peeking');
+  }
+  function ratReveal(msg) {
+    ratZone.classList.remove('rat-peeking');
+    void ratZone.offsetWidth;
+    ratZone.classList.add('rat-reveal');
+    if (msg) ratBubble.innerHTML = msg;
+  }
+
+  // Start the peek loop after a short delay
+  setTimeout(ratStartPeeking, 900);
+
+  async function doLogin() {
+    const email    = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const btn      = document.getElementById('login-btn');
+    const alertEl  = document.getElementById('login-alert');
+
+    if (!email || !password) {
+      showAlert('error', 'Please enter your email and password.');
+      return;
+    }
+
+    // Rat comes out and watches the login
+    ratReveal('logging in boss... 🐀');
+
+    btn.disabled = true;
+    btn.textContent = 'Signing in...';
+    alertEl.className = 'alert'; alertEl.style.display = 'none';
+
+    try {
+      const res  = await fetch('/api/auth/login', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email, password }),
+        credentials: 'same-origin',
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        ratReveal(data.new_user ? '🎉 welcome boss!' : '🐀 welcome back!');
+        if (data.new_user) {
+          showAlert('success', '✓ Account created! Redirecting...');
+        } else {
+          showAlert('success', '✓ Welcome back! Redirecting...');
+        }
+        setTimeout(() => { window.location.href = '/'; }, 900);
+      } else {
+        ratReveal('wrong pwd boss! 😬<br>try again');
+        showAlert('error', data.error || 'Login failed');
+        btn.disabled = false;
+        btn.textContent = 'Sign In';
+        // Go back to hide-and-seek after showing the error
+        setTimeout(() => {
+          ratBubble.innerHTML = 'psst! 👀<br>type your email &amp; pwd!';
+          ratStartPeeking();
+        }, 2500);
+      }
+    } catch (e) {
+      ratReveal('server error boss 😬');
+      showAlert('error', 'Server error: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = 'Sign In';
+      setTimeout(() => {
+        ratBubble.innerHTML = 'hi boss 👋<br>enter your email &amp; pwd';
+        ratStartPeeking();
+      }, 2500);
+    }
+  }
+
+  function showAlert(type, msg) {
+    const el = document.getElementById('login-alert');
+    el.className    = `alert ${type}`;
+    el.textContent  = msg;
+    el.style.display = 'block';
+  }
+
+  // Auto-focus email
+  document.getElementById('email').focus();
+</script>
+</body>
+</html>

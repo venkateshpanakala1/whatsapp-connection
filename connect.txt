@@ -1,0 +1,63 @@
+Step-by-Step Guide — Get Permanent Token & Connect
+PART 1 — Get the Token from Meta (One time only)
+Step 1 — Go to Meta Business Manager
+
+
+Open browser → go to business.facebook.com
+Login with the client's Facebook account
+Step 2 — Go to System Users
+
+
+Left sidebar → Settings (gear icon)
+→ Users
+→ System Users
+→ Click "Add"
+→ Name it anything (e.g. "WhatsApp Bot")
+→ Role: Admin
+→ Click Create System User
+Step 3 — Generate Token
+
+
+Click on the System User you just created
+→ Click "Generate New Token"
+→ Select your App from dropdown
+→ Enable these 2 permissions:
+    ✅ whatsapp_business_messaging
+    ✅ whatsapp_business_management
+→ Click "Generate Token"
+→ COPY the token immediately (it shows only once)
+→ Save it somewhere safe (notepad)
+Step 4 — Get Phone Number ID and WABA ID
+
+
+Go to developers.facebook.com
+→ My Apps → Select your App
+→ Left sidebar → WhatsApp → API Setup
+
+You will see:
+  Phone Number ID  → copy this (e.g. 134632433069005)
+  WhatsApp Business Account ID → copy this (e.g. 102938475610293)
+PART 2 — Connect in Our App
+Step 5 — Open the app
+
+
+Open browser → http://localhost:3000
+Step 6 — Fill the form
+
+
+Tab: Connect WhatsApp
+
+Phone Number ID   → paste what you copied in Step 4
+WABA ID           → paste what you copied in Step 4
+Access Token      → paste the token from Step 3
+
+Click → "Connect WhatsApp"
+Step 7 — Done
+
+
+Green dot appears → "Connected"
+Token is saved in your PostgreSQL database
+
+
+
+EAAOdQa5eyOQBRrw5XODpXf9fJnm3P3c208wZBknhl3mGD8j8q9ppXUzloUm1EBD5wO8IbjpItOqcFw4f8t10qT9yiQgH69Ey4iNZBLF2XV6r99OT5gLZAHGwQZBsHHuAwCYSOac1IANY4msvvx2wIZAT0pOJk2p1JPohGsPuZBOm2qGJAb4NwClYFYVkH7qU1mDDlFt6w2BrqJvyQWPZAwjb8Xhq1zRoTMxU98R
