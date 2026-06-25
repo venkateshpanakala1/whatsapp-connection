@@ -275,7 +275,17 @@ def counter_reply():
 def cr_status_stream(cr_id):
     def generate():
         while True:
-            status = _cr_jobs.get(str(cr_id), 'pending_approval')
+            # Read from DB so it works across multiple gunicorn workers
+            try:
+                conn = get_conn()
+                cur  = conn.cursor()
+                cur.execute('SELECT status FROM counter_replies WHERE id = %s', (cr_id,))
+                row = cur.fetchone()
+                cur.close()
+                put_conn(conn)
+                status = row[0] if row else 'pending_approval'
+            except Exception:
+                status = 'pending_approval'
             yield f"data: {json.dumps({'status': status})}\n\n"
             done = status in ('sent', 'rejected', 'timeout') or status.startswith('send_failed')
             if done:
