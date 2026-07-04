@@ -272,6 +272,13 @@
         const body   = t.components?.find(c => c.type === 'BODY')?.text || '';
         const header = t.components?.find(c => c.type === 'HEADER');
         const tag    = header ? `<span style="font-size:10.5px;color:var(--text-3);font-weight:600">[${header.format}]</span> ` : '';
+        const needsMedia = header && ['IMAGE','VIDEO','DOCUMENT'].includes(header.format);
+        const attachHtml = needsMedia ? `
+            <label class="btn-attach" style="margin-top:8px;font-size:11px;font-weight:600;color:var(--g-500);cursor:pointer;display:block;text-align:right">
+              📎 Attach for Sending
+              <input type="file" accept="image/*,application/pdf,video/*" style="display:none" onchange="onAttachMediaSelected(this, '${t.name}')" />
+            </label>
+            <span class="attach-status" id="attach-status-${t.name}" style="font-size:10px;color:var(--text-3);display:block;text-align:right;margin-top:2px"></span>` : '';
         return `
           <div class="tpl-card">
             <div class="tpl-info">
@@ -281,6 +288,7 @@
             </div>
             <div class="tpl-card-right">
               <span class="badge ${badgeClass(t.status)}">${t.status}</span>
+              ${attachHtml}
             </div>
           </div>`;
       }).join('');
@@ -292,6 +300,29 @@
 
   function badgeClass(s) {
     return { APPROVED:'badge-approved', PENDING:'badge-pending', REJECTED:'badge-rejected', PAUSED:'badge-paused' }[s] || 'badge-pending';
+  }
+
+  // Stores the header image/doc in our own DB (keyed by template name) so
+  // Bulk Send can auto-reuse it later — Meta doesn't keep the file we send
+  // during creation beyond the approval preview.
+  async function attachMediaToTemplate(name, file) {
+    try {
+      const formData = new FormData();
+      formData.append('name', name);
+      formData.append('file', file);
+      const res  = await fetch('/api/templates/attach-media', { method: 'POST', body: formData });
+      const data = await res.json();
+      return !!data.success;
+    } catch (e) { return false; }
+  }
+
+  async function onAttachMediaSelected(input, name) {
+    const file = input.files[0];
+    if (!file) return;
+    const statusEl = document.getElementById(`attach-status-${name}`);
+    if (statusEl) statusEl.textContent = 'Uploading…';
+    const ok = await attachMediaToTemplate(name, file);
+    if (statusEl) statusEl.textContent = ok ? '✓ Attached' : '✗ Failed, try again';
   }
 
   function onHeaderTypeChange(val) {
@@ -379,6 +410,9 @@
       });
       const data = await res.json();
       if (data.success) {
+        if (header_type !== 'NONE' && selectedFile) {
+          await attachMediaToTemplate(name, selectedFile);
+        }
         showAlert('create-alert', 'success', data.message + ' — Status: ' + (data.data?.status || 'PENDING'));
         resetForm(); loadTemplates();
       } else showAlert('create-alert', 'error', data.error || 'Failed to create template');

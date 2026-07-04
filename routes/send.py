@@ -9,8 +9,6 @@ import uuid
 send_bp = Blueprint('send', __name__)
 META_API = 'https://graph.facebook.com/v22.0'
 
-_jobs = {}
-
 
 def get_wa_credentials(user_id):
     conn = get_conn()
@@ -62,25 +60,136 @@ def log_send(job_id, phone, name, template_name, status, user_id):
         except: pass
 
 
-def send_worker(job_id, contacts, template_name, template_lang, creds, delay, user_id):
-    job         = _jobs[job_id]
-    pause_event = job['pause_event']
-    job['status'] = 'running'
+# ── Job state lives in the DB (not a process-local dict) so pause/resume/
+# status/progress work no matter which gunicorn worker handles the request. ──
 
-    for i, contact in enumerate(contacts):
-        pause_event.wait()
+def create_job(job_id, user_id, source_file, template_name, total, delay):
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO send_jobs (id, user_id, source_file, template_name, status, total, delay)
+            VALUES (%s, %s, %s, %s, 'pending', %s, %s)
+        """, (job_id, user_id, source_file, template_name, total, delay))
+        conn.commit()
+        cur.close()
+    finally:
+        put_conn(conn)
+
+
+def set_job_status(job_id, status):
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute('UPDATE send_jobs SET status=%s, updated_at=NOW() WHERE id=%s', (status, job_id))
+        conn.commit()
+        cur.close()
+    finally:
+        put_conn(conn)
+
+
+def bump_job_progress(job_id, success, error_msg=None):
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        if success:
+            cur.execute("""
+                UPDATE send_jobs SET current = current + 1, sent = sent + 1, updated_at = NOW()
+                WHERE id = %s
+            """, (job_id,))
+        else:
+            cur.execute("""
+                UPDATE send_jobs
+                SET current = current + 1, failed = failed + 1, updated_at = NOW(),
+                    errors = CASE WHEN jsonb_array_length(errors) < 10
+                                  THEN errors || to_jsonb(%s::text)
+                                  ELSE errors END
+                WHERE id = %s
+            """, (error_msg, job_id))
+        conn.commit()
+        cur.close()
+    finally:
+        put_conn(conn)
+
+
+def get_job(job_id):
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT status, current, total, sent, failed, errors
+            FROM send_jobs WHERE id = %s
+        """, (job_id,))
+        row = cur.fetchone()
+        cur.close()
+        if not row:
+            return None
+        return {
+            'status': row[0], 'current': row[1], 'total': row[2],
+            'sent': row[3], 'failed': row[4], 'errors': row[5] or []
+        }
+    finally:
+        put_conn(conn)
+
+
+def wait_if_paused(job_id):
+    while True:
+        job = get_job(job_id)
+        if not job or job['status'] != 'paused':
+            return
+        time.sleep(1)
+
+
+def build_template_components(header_format, header_media_url, body_params, contact):
+    """
+    Build the `components` array WhatsApp requires on every send for templates
+    that have a media header and/or {{n}} body variables. header_handle from
+    template creation is only used for Meta's approval preview — actual sends
+    must supply the real values every time, or Meta returns error #132012.
+    """
+    components = []
+
+    if header_format in ('IMAGE', 'VIDEO', 'DOCUMENT') and header_media_url:
+        key = header_format.lower()
+        components.append({
+            'type': 'header',
+            'parameters': [{'type': key, key: {'link': header_media_url}}]
+        })
+
+    if body_params:
+        parameters = []
+        for val in body_params:
+            if val == '{{name}}':
+                resolved = contact.get('name') or contact['phone']
+            elif val == '{{phone}}':
+                resolved = contact['phone']
+            else:
+                resolved = val
+            parameters.append({'type': 'text', 'text': resolved or ''})
+        components.append({'type': 'body', 'parameters': parameters})
+
+    return components
+
+
+def send_worker(job_id, contacts, template_name, template_lang, creds, delay, user_id,
+                 header_format=None, header_media_url='', body_params=None):
+    set_job_status(job_id, 'running')
+
+    for contact in contacts:
+        wait_if_paused(job_id)
 
         phone = contact['phone']
         name  = contact.get('name', '')
+        components = build_template_components(header_format, header_media_url, body_params, contact)
+        template = {'name': template_name, 'language': {'code': template_lang}}
+        if components:
+            template['components'] = components
         payload = {
             'messaging_product': 'whatsapp',
             'recipient_type':    'individual',
             'to':                phone,
             'type':              'template',
-            'template': {
-                'name':     template_name,
-                'language': {'code': template_lang}
-            }
+            'template':          template
         }
         try:
             res  = http.post(
@@ -94,26 +203,22 @@ def send_worker(job_id, contacts, template_name, template_lang, creds, delay, us
             )
             data = res.json()
             if 'error' in data:
-                job['failed'] += 1
-                if len(job['errors']) < 10:
-                    job['errors'].append(f"{phone}: {data['error']['message']}")
+                bump_job_progress(job_id, False, f"{phone}: {data['error']['message']}")
                 log_send(job_id, phone, name, template_name, 'failed', user_id)
             else:
-                job['sent'] += 1
+                bump_job_progress(job_id, True)
                 log_send(job_id, phone, name, template_name, 'sent', user_id)
-        except Exception as e:
-            job['failed'] += 1
+        except Exception:
+            bump_job_progress(job_id, False, f"{phone}: request failed")
             log_send(job_id, phone, name, template_name, 'failed', user_id)
-
-        job['current'] = i + 1
 
         elapsed = 0
         while elapsed < delay:
-            pause_event.wait()
+            wait_if_paused(job_id)
             time.sleep(0.5)
             elapsed += 0.5
 
-    job['status'] = 'done'
+    set_job_status(job_id, 'done')
 
 
 # GET /api/send/templates
@@ -151,15 +256,21 @@ def get_templates():
 # POST /api/send/start
 @send_bp.route('/start', methods=['POST'])
 def start_send():
-    user_id       = session.get('user_id')
-    body          = request.get_json()
-    source_file   = (body.get('source_file')   or '').strip()
-    template_name = (body.get('template_name') or '').strip()
-    template_lang = (body.get('template_lang') or 'en').strip()
-    delay         = int(body.get('delay', 1))
+    user_id          = session.get('user_id')
+    body             = request.get_json()
+    source_file      = (body.get('source_file')     or '').strip()
+    template_name    = (body.get('template_name')   or '').strip()
+    template_lang    = (body.get('template_lang')   or 'en').strip()
+    delay            = int(body.get('delay', 1))
+    header_format    = (body.get('header_format')    or '').strip().upper()
+    header_media_url = (body.get('header_media_url') or '').strip()
+    body_params      = body.get('body_params') or []
 
     if not source_file or not template_name:
         return jsonify({'error': 'source_file and template_name are required'}), 400
+
+    if header_format in ('IMAGE', 'VIDEO', 'DOCUMENT') and not header_media_url:
+        return jsonify({'error': 'This template has a media header — a header media URL is required'}), 400
 
     creds = get_wa_credentials(user_id)
     if not creds:
@@ -169,26 +280,17 @@ def start_send():
     if not contacts:
         return jsonify({'error': f'No contacts found in "{source_file}"'}), 400
 
-    pause_event = threading.Event()
-    pause_event.set()
-
-    job_id       = str(uuid.uuid4())
-    _jobs[job_id] = {
-        'status':      'pending',
-        'sent':        0,
-        'failed':      0,
-        'current':     0,
-        'total':       len(contacts),
-        'delay':       delay,
-        'errors':      [],
-        'pause_event': pause_event,
-        'source_file': source_file,
-        'template':    template_name,
-    }
+    job_id = str(uuid.uuid4())
+    create_job(job_id, user_id, source_file, template_name, len(contacts), delay)
 
     t = threading.Thread(
         target=send_worker,
         args=(job_id, contacts, template_name, template_lang, creds, delay, user_id),
+        kwargs={
+            'header_format':    header_format,
+            'header_media_url': header_media_url,
+            'body_params':      body_params,
+        },
         daemon=True
     )
     t.start()
@@ -199,63 +301,43 @@ def start_send():
 # POST /api/send/pause/<job_id>
 @send_bp.route('/pause/<job_id>', methods=['POST'])
 def pause_job(job_id):
-    job = _jobs.get(job_id)
-    if not job:
+    if not get_job(job_id):
         return jsonify({'error': 'Job not found'}), 404
-    job['pause_event'].clear()
-    job['status'] = 'paused'
+    set_job_status(job_id, 'paused')
     return jsonify({'success': True})
 
 
 # POST /api/send/resume/<job_id>
 @send_bp.route('/resume/<job_id>', methods=['POST'])
 def resume_job(job_id):
-    job = _jobs.get(job_id)
-    if not job:
+    if not get_job(job_id):
         return jsonify({'error': 'Job not found'}), 404
-    job['pause_event'].set()
-    job['status'] = 'running'
+    set_job_status(job_id, 'running')
     return jsonify({'success': True})
 
 
 # GET /api/send/status/<job_id>
 @send_bp.route('/status/<job_id>')
 def job_status(job_id):
-    job = _jobs.get(job_id)
+    job = get_job(job_id)
     if not job:
         return jsonify({'found': False}), 404
-    return jsonify({
-        'found':   True,
-        'status':  job.get('status'),
-        'current': job.get('current', 0),
-        'total':   job.get('total', 0),
-        'sent':    job.get('sent', 0),
-        'failed':  job.get('failed', 0),
-        'errors':  job.get('errors', []),
-    })
+    return jsonify({'found': True, **job})
 
 
 # GET /api/send/progress/<job_id>  — SSE stream
 @send_bp.route('/progress/<job_id>')
 def progress(job_id):
-    if job_id not in _jobs:
+    if not get_job(job_id):
         return jsonify({'error': 'Job not found'}), 404
 
     def generate():
         while True:
-            job  = _jobs.get(job_id, {})
-            data = json.dumps({
-                'status':  job.get('status'),
-                'current': job.get('current', 0),
-                'total':   job.get('total', 0),
-                'sent':    job.get('sent', 0),
-                'failed':  job.get('failed', 0),
-                'errors':  job.get('errors', []),
-            })
-            yield f"data: {data}\n\n"
+            job = get_job(job_id) or {}
+            yield f"data: {json.dumps(job)}\n\n"
             if job.get('status') == 'done':
                 break
-            time.sleep(0.5)
+            time.sleep(1)
 
     return Response(
         generate(),

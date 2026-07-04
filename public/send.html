@@ -152,6 +152,8 @@
       <div class="info-box" id="template-info"></div>
     </div>
 
+    <div id="dynamic-params" style="display:none"></div>
+
     <div class="form-group">
       <label>Delay Between Messages</label>
       <select id="delay-select">
@@ -273,25 +275,119 @@
     checkReady();
   }
 
-  function onTemplateChange() {
+  let currentTemplateReq  = { headerFormat: null, varCount: 0 };
+  let currentTemplateName = '';
+
+  function tplStorageKey(name) { return `wa_tpl_params_${name}`; }
+
+  function loadTplParams(name) {
+    try { return JSON.parse(localStorage.getItem(tplStorageKey(name)) || '{}'); } catch (e) { return {}; }
+  }
+
+  function saveTplParams() {
+    if (!currentTemplateName) return;
+    const { headerFormat, varCount } = currentTemplateReq;
+    const data = {};
+    if (headerFormat) data.headerMediaUrl = document.getElementById('header-media-url')?.value.trim() || '';
+    if (varCount) {
+      data.bodyParams = [];
+      for (let i = 1; i <= varCount; i++) data.bodyParams.push(document.getElementById(`body-param-${i}`)?.value.trim() || '');
+    }
+    localStorage.setItem(tplStorageKey(currentTemplateName), JSON.stringify(data));
+  }
+
+  function onParamInput() { saveTplParams(); checkReady(); }
+
+  async function onTemplateChange() {
     const val  = document.getElementById('template-select').value;
     const info = document.getElementById('template-info');
-    if (!val) { info.classList.remove('show'); checkReady(); return; }
+    currentTemplateReq  = { headerFormat: null, varCount: 0, autoMediaUrl: null };
+    currentTemplateName = '';
+    if (!val) { info.classList.remove('show'); renderDynamicParams(); checkReady(); return; }
     const { name } = JSON.parse(val);
+    currentTemplateName = name;
     const tmpl = templatesData.find(x => x.name === name);
     if (tmpl) {
-      const body = tmpl.components?.find(c => c.type === 'BODY')?.text || '';
+      const bodyComp   = tmpl.components?.find(c => c.type === 'BODY');
+      const headerComp = tmpl.components?.find(c => c.type === 'HEADER');
+      const body = bodyComp?.text || '';
       info.innerHTML = `<strong>${tmpl.name}</strong> &middot; ${tmpl.category} &middot; ${tmpl.language}
         <div style="color:var(--text-2);margin-top:5px;font-size:12.5px">${body.substring(0,120)}${body.length>120?'…':''}</div>`;
       info.classList.add('show');
+
+      if (headerComp && ['IMAGE','VIDEO','DOCUMENT'].includes(headerComp.format)) {
+        currentTemplateReq.headerFormat = headerComp.format;
+      }
+      const varNumbers = new Set();
+      (body.match(/\{\{(\d+)\}\}/g) || []).forEach(m => varNumbers.add(parseInt(m.replace(/\D/g,''), 10)));
+      currentTemplateReq.varCount = varNumbers.size;
     }
+
+    if (currentTemplateReq.headerFormat) {
+      try {
+        const res  = await fetch(`/api/templates/media-url?name=${encodeURIComponent(name)}`);
+        const data = await res.json();
+        if (data.has_media) currentTemplateReq.autoMediaUrl = data.url;
+      } catch (e) {}
+    }
+
+    renderDynamicParams();
     checkReady();
+  }
+
+  function renderDynamicParams() {
+    const wrap = document.getElementById('dynamic-params');
+    const { headerFormat, varCount, autoMediaUrl } = currentTemplateReq;
+    if (!headerFormat && !varCount) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
+
+    const saved = currentTemplateName ? loadTplParams(currentTemplateName) : {};
+
+    let html = '';
+    if (headerFormat) {
+      const label = headerFormat.charAt(0) + headerFormat.slice(1).toLowerCase();
+      const prefill = autoMediaUrl || saved.headerMediaUrl || '';
+      const hint = autoMediaUrl
+        ? `✓ Auto-filled from the ${headerFormat.toLowerCase()} you attached to this template. Change it below if you want to use a different one for this send.`
+        : `This template has a ${headerFormat.toLowerCase()} header — paste a public URL to the ${headerFormat.toLowerCase()} to send with every message. Remembered per template on this browser.`;
+      html += `
+        <div class="form-group">
+          <label>Header ${label} URL</label>
+          <input type="text" id="header-media-url" placeholder="https://..." value="${esc(prefill)}" oninput="onParamInput()" />
+          <p class="hint">${hint}</p>
+        </div>`;
+    }
+    for (let i = 1; i <= varCount; i++) {
+      const savedVal = saved.bodyParams?.[i - 1] || '';
+      html += `
+        <div class="form-group">
+          <label>Body Variable {{${i}}}</label>
+          <input type="text" id="body-param-${i}" placeholder="Fixed text, or {{name}} / {{phone}}" value="${esc(savedVal)}" oninput="onParamInput()" />
+          <p class="hint">Use <strong>{{name}}</strong> or <strong>{{phone}}</strong> to insert each contact's own value, or type fixed text sent to everyone.</p>
+        </div>`;
+    }
+    wrap.innerHTML = html;
+    wrap.style.display = 'block';
+    checkReady();
+  }
+
+  function esc(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   function checkReady() {
     const f = document.getElementById('file-select').value;
     const t = document.getElementById('template-select').value;
-    document.getElementById('run-btn').disabled = !(f && t);
+    let ready = !!(f && t);
+    const { headerFormat, varCount } = currentTemplateReq;
+    if (ready && headerFormat) {
+      ready = !!document.getElementById('header-media-url')?.value.trim();
+    }
+    if (ready && varCount) {
+      for (let i = 1; i <= varCount; i++) {
+        if (!document.getElementById(`body-param-${i}`)?.value.trim()) { ready = false; break; }
+      }
+    }
+    document.getElementById('run-btn').disabled = !ready;
   }
 
   async function runSend() {
@@ -300,6 +396,11 @@
     const delay       = parseInt(document.getElementById('delay-select').value);
     if (!source_file || !tmplVal) return;
     const { name: template_name, lang: template_lang } = JSON.parse(tmplVal);
+    const { headerFormat, varCount } = currentTemplateReq;
+    const header_media_url = headerFormat ? document.getElementById('header-media-url').value.trim() : '';
+    const body_params = [];
+    for (let i = 1; i <= varCount; i++) body_params.push(document.getElementById(`body-param-${i}`).value.trim());
+
     document.getElementById('run-btn').disabled    = true;
     document.getElementById('run-btn').textContent = '⏳ Starting...';
     document.getElementById('form-alert').style.display = 'none';
@@ -308,7 +409,10 @@
     try {
       const res  = await fetch(`${API}/start`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source_file, template_name, template_lang, delay }),
+        body: JSON.stringify({
+          source_file, template_name, template_lang, delay,
+          header_format: headerFormat || '', header_media_url, body_params,
+        }),
       });
       const data = await res.json();
       if (!data.success) { showError(data.error); resetBtn(); return; }

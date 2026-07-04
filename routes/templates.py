@@ -1,6 +1,7 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, Response
 import requests as http
 from db import get_conn, put_conn
+import secrets
 
 templates_bp = Blueprint('templates', __name__)
 META_API = 'https://graph.facebook.com/v22.0'
@@ -203,3 +204,92 @@ def create_template():
 
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+# POST /api/templates/attach-media
+# Stores a template's header image/document in our own DB so Bulk Send can
+# auto-reuse it. Meta only keeps the file we send during creation as an
+# approval-preview example — it is never reusable for actual sends, so we
+# keep our own copy and serve it back by URL at send time.
+@templates_bp.route('/attach-media', methods=['POST'])
+def attach_media():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    name = (request.form.get('name') or '').strip().lower()
+    if not name:
+        return jsonify({'error': 'Template name is required'}), 400
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+
+    file      = request.files['file']
+    data      = file.read()
+    mime_type = file.mimetype
+    token     = secrets.token_urlsafe(16)
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO template_media (user_id, template_name, token, mime_type, data)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (user_id, template_name) DO UPDATE
+                SET token = EXCLUDED.token, mime_type = EXCLUDED.mime_type,
+                    data = EXCLUDED.data, created_at = NOW()
+        """, (user_id, name, token, mime_type, data))
+        conn.commit()
+        cur.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        put_conn(conn)
+
+
+# GET /api/templates/media-url?name=<template_name>
+# Tells the caller (Bulk Send) whether we have a stored header image/document
+# for this template, and if so, its public URL.
+@templates_bp.route('/media-url', methods=['GET'])
+def media_url():
+    user_id = session.get('user_id')
+    name = (request.args.get('name') or '').strip().lower()
+    if not user_id or not name:
+        return jsonify({'success': True, 'has_media': False})
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT token FROM template_media WHERE user_id = %s AND template_name = %s',
+            (user_id, name)
+        )
+        row = cur.fetchone()
+        cur.close()
+        if not row:
+            return jsonify({'success': True, 'has_media': False})
+        url = f"{request.host_url.rstrip('/')}/api/templates/media/{row[0]}"
+        return jsonify({'success': True, 'has_media': True, 'url': url})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        put_conn(conn)
+
+
+# GET /api/templates/media/<token>  — public, no auth (Meta's servers fetch this directly)
+@templates_bp.route('/media/<token>', methods=['GET'])
+def media_file(token):
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute('SELECT data, mime_type FROM template_media WHERE token = %s', (token,))
+        row = cur.fetchone()
+        cur.close()
+        if not row:
+            return jsonify({'error': 'Not found'}), 404
+        return Response(bytes(row[0]), mimetype=row[1] or 'application/octet-stream')
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        put_conn(conn)

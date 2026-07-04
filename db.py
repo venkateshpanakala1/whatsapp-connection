@@ -113,6 +113,33 @@ def init_db():
                 created_at TIMESTAMP DEFAULT NOW(),
                 sent_at TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS send_jobs (
+                id VARCHAR(64) PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id),
+                source_file VARCHAR(255),
+                template_name VARCHAR(100),
+                status VARCHAR(20) DEFAULT 'pending',
+                total INTEGER DEFAULT 0,
+                current INTEGER DEFAULT 0,
+                sent INTEGER DEFAULT 0,
+                failed INTEGER DEFAULT 0,
+                delay INTEGER DEFAULT 1,
+                errors JSONB DEFAULT '[]'::jsonb,
+                created_at TIMESTAMP DEFAULT NOW(),
+                updated_at TIMESTAMP DEFAULT NOW()
+            );
+
+            CREATE TABLE IF NOT EXISTS template_media (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id),
+                template_name VARCHAR(100) NOT NULL,
+                token VARCHAR(40) NOT NULL UNIQUE,
+                mime_type VARCHAR(100),
+                data BYTEA NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(user_id, template_name)
+            );
         """)
         # Migrations: add source_file + user_id to all tables
         cur.execute("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS source_file VARCHAR(255);")
