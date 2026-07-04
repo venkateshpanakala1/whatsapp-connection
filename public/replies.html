@@ -370,7 +370,7 @@
   }
 
   /* ── Counter Reply modal ── */
-  function openCR(id) {
+  async function openCR(id) {
     const data = _repliesMap[id];
     if (!data) return;
     currentCR = data;
@@ -389,6 +389,23 @@
     resetSteps();
     document.getElementById('cr-modal-overlay').classList.add('open');
     document.getElementById('cr-textarea').focus();
+
+    // A counter-reply to this contact may already be running server-side
+    // (e.g. you closed/refreshed the page earlier) — reconnect to it instead
+    // of losing track of it, since the backend keeps checking regardless.
+    try {
+      const res    = await fetch(`${API}/cr-active?phone=${encodeURIComponent(data.from_phone)}`);
+      const active = await res.json();
+      if (active.active) {
+        document.getElementById('cr-input-area').style.display = 'none';
+        document.getElementById('step-dots').classList.add('show');
+        setStep(1, 'active');
+        showStatus('Reconnecting to a reply already in progress for this contact…', 'step-pending');
+        if (crEventSource) crEventSource.close();
+        crEventSource = new EventSource(`${API}/cr-status/${active.cr_id}`);
+        crEventSource.onmessage = e => { handleCRStatus(JSON.parse(e.data).status); };
+      }
+    } catch (e) {}
   }
 
   function closeCR() {
@@ -442,7 +459,10 @@
   }
 
   function handleCRStatus(status) {
-    if (status === 'pending_approval') {
+    if (status === 'creating' || status === 'resuming') {
+      setStep(1, 'active');
+      showStatus('Creating template…', 'step-creating');
+    } else if (status === 'pending_approval') {
       setStep(1,'done'); setStep(2,'active');
       showStatus('Waiting for Meta to approve the template…', 'step-pending');
     } else if (status === 'approved') {
@@ -458,7 +478,7 @@
       if (crEventSource) { crEventSource.close(); crEventSource = null; }
     } else if (status === 'timeout') {
       setStep(2,'error');
-      showStatus('Timed out waiting for template approval (15 min).', 'step-error');
+      showStatus('Meta did not approve the template within 24 hours.', 'step-error');
       if (crEventSource) { crEventSource.close(); crEventSource = null; }
     } else if (status && status.startsWith('send_failed')) {
       setStep(3,'error');

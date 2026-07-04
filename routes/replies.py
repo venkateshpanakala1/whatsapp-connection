@@ -48,11 +48,20 @@ def update_cr_status(cr_id, status):
         except: pass
 
 
+MAX_WAIT_SECONDS = 24 * 60 * 60  # safety cap so a stuck template can't loop forever
+
+
 def counter_reply_worker(cr_id, phone, template_name, template_lang, creds, user_id=None, message_text=''):
     update_cr_status(cr_id, 'pending_approval')
 
-    for _ in range(60):
-        time.sleep(15)
+    # Keep checking until Meta approves/rejects the template — no early give-up.
+    # Poll often at first (approvals are usually fast), then back off to avoid
+    # hammering the Graph API during a long wait.
+    elapsed = 0
+    while elapsed < MAX_WAIT_SECONDS:
+        interval = 15 if elapsed < 300 else (60 if elapsed < 3600 else 300)
+        time.sleep(interval)
+        elapsed += interval
         try:
             res  = http.get(
                 f"{META_API}/{creds['waba_id']}/message_templates",
@@ -104,6 +113,74 @@ def counter_reply_worker(cr_id, phone, template_name, template_lang, creds, user
             continue
 
     update_cr_status(cr_id, 'timeout')
+
+
+def get_active_counter_reply(user_id, phone, message_text=None):
+    """Most recent non-terminal counter-reply for this phone (optionally
+    matching an exact message_text, to dedupe accidental double-sends)."""
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        if message_text is not None:
+            cur.execute("""
+                SELECT id, template_name, status FROM counter_replies
+                WHERE user_id = %s AND phone = %s AND message_text = %s
+                  AND status NOT IN ('sent', 'rejected', 'timeout')
+                  AND status NOT LIKE 'send_failed%%'
+                ORDER BY id DESC LIMIT 1
+            """, (user_id, phone, message_text))
+        else:
+            cur.execute("""
+                SELECT id, template_name, status FROM counter_replies
+                WHERE user_id = %s AND phone = %s
+                  AND status NOT IN ('sent', 'rejected', 'timeout')
+                  AND status NOT LIKE 'send_failed%%'
+                ORDER BY id DESC LIMIT 1
+            """, (user_id, phone))
+        row = cur.fetchone()
+        cur.close()
+        return row
+    finally:
+        put_conn(conn)
+
+
+def resume_pending_counter_replies():
+    """
+    Re-attach background workers for counter-replies that were still waiting
+    on template approval when the process last stopped (e.g. a deploy), so
+    they keep checking instead of being silently abandoned. Uses an atomic
+    UPDATE...RETURNING so if multiple gunicorn workers boot at once, each
+    in-flight job is only claimed — and resumed — by exactly one of them.
+    """
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE counter_replies
+            SET status = 'resuming'
+            WHERE status NOT IN ('sent', 'rejected', 'timeout', 'resuming')
+              AND status NOT LIKE 'send_failed%'
+            RETURNING id, phone, contact_name, message_text, template_name, template_lang, user_id
+        """)
+        rows = cur.fetchall()
+        conn.commit()
+        cur.close()
+    finally:
+        put_conn(conn)
+
+    for cr_id, phone, contact_name, message_text, template_name, template_lang, user_id in rows:
+        creds = get_wa_credentials(user_id)
+        if not creds:
+            update_cr_status(cr_id, 'send_failed: WhatsApp disconnected')
+            continue
+        threading.Thread(
+            target=counter_reply_worker,
+            args=(cr_id, phone, template_name, template_lang, creds, user_id, message_text),
+            daemon=True
+        ).start()
+
+    if rows:
+        print(f'[replies] resumed {len(rows)} in-flight counter-repl{"y" if len(rows) == 1 else "ies"}')
 
 
 # GET /api/replies/templates
@@ -217,6 +294,13 @@ def counter_reply():
     if not phone or not message_text:
         return jsonify({'error': 'phone and message_text are required'}), 400
 
+    # If this exact reply is already in flight (e.g. double-click, or the
+    # page was closed/refreshed mid-send), reattach to it instead of creating
+    # a second ad-hoc template for the same message.
+    existing = get_active_counter_reply(user_id, phone, message_text)
+    if existing:
+        return jsonify({'success': True, 'cr_id': existing[0], 'template_name': existing[1], 'resumed': True})
+
     creds = get_wa_credentials(user_id)
     if not creds:
         return jsonify({'error': 'WhatsApp not connected'}), 400
@@ -268,6 +352,22 @@ def counter_reply():
     ).start()
 
     return jsonify({'success': True, 'cr_id': cr_id, 'template_name': template_name})
+
+
+# GET /api/replies/cr-active?phone=<phone>
+# Lets the Replies UI reconnect to an in-progress counter-reply for a contact
+# when a reply modal is (re)opened — e.g. after a refresh or closing the tab —
+# instead of losing track of a job that's still running server-side.
+@replies_bp.route('/cr-active', methods=['GET'])
+def cr_active():
+    user_id = session.get('user_id')
+    phone   = (request.args.get('phone') or '').strip()
+    if not user_id or not phone:
+        return jsonify({'active': False})
+    row = get_active_counter_reply(user_id, phone)
+    if not row:
+        return jsonify({'active': False})
+    return jsonify({'active': True, 'cr_id': row[0], 'template_name': row[1], 'status': row[2]})
 
 
 # GET /api/replies/cr-status/<cr_id>  — SSE stream
