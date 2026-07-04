@@ -226,18 +226,21 @@ def attach_media():
     file      = request.files['file']
     data      = file.read()
     mime_type = file.mimetype
+    # Prefer a filename the user typed for this attachment (e.g. a friendlier
+    # display name for a document header); fall back to the uploaded file's name.
+    filename  = (request.form.get('filename') or file.filename or '').strip()
     token     = secrets.token_urlsafe(16)
 
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO template_media (user_id, template_name, token, mime_type, data)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO template_media (user_id, template_name, token, mime_type, filename, data)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (user_id, template_name) DO UPDATE
                 SET token = EXCLUDED.token, mime_type = EXCLUDED.mime_type,
-                    data = EXCLUDED.data, created_at = NOW()
-        """, (user_id, name, token, mime_type, data))
+                    filename = EXCLUDED.filename, data = EXCLUDED.data, created_at = NOW()
+        """, (user_id, name, token, mime_type, filename, data))
         conn.commit()
         cur.close()
         return jsonify({'success': True})
@@ -262,7 +265,7 @@ def media_url():
     try:
         cur = conn.cursor()
         cur.execute(
-            'SELECT token FROM template_media WHERE user_id = %s AND template_name = %s',
+            'SELECT token, filename FROM template_media WHERE user_id = %s AND template_name = %s',
             (user_id, name)
         )
         row = cur.fetchone()
@@ -270,7 +273,7 @@ def media_url():
         if not row:
             return jsonify({'success': True, 'has_media': False})
         url = f"{request.host_url.rstrip('/')}/api/templates/media/{row[0]}"
-        return jsonify({'success': True, 'has_media': True, 'url': url})
+        return jsonify({'success': True, 'has_media': True, 'url': url, 'filename': row[1] or ''})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:

@@ -136,11 +136,13 @@ def init_db():
                 template_name VARCHAR(100) NOT NULL,
                 token VARCHAR(40) NOT NULL UNIQUE,
                 mime_type VARCHAR(100),
+                filename VARCHAR(255),
                 data BYTEA NOT NULL,
                 created_at TIMESTAMP DEFAULT NOW(),
                 UNIQUE(user_id, template_name)
             );
         """)
+        cur.execute("ALTER TABLE template_media ADD COLUMN IF NOT EXISTS filename VARCHAR(255);")
         # Migrations: add source_file + user_id to all tables
         cur.execute("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS source_file VARCHAR(255);")
         cur.execute("ALTER TABLE whatsapp_connections ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")

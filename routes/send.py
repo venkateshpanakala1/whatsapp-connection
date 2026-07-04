@@ -140,7 +140,7 @@ def wait_if_paused(job_id):
         time.sleep(1)
 
 
-def build_template_components(header_format, header_media_url, body_params, contact):
+def build_template_components(header_format, header_media_url, header_filename, body_params, contact):
     """
     Build the `components` array WhatsApp requires on every send for templates
     that have a media header and/or {{n}} body variables. header_handle from
@@ -151,9 +151,12 @@ def build_template_components(header_format, header_media_url, body_params, cont
 
     if header_format in ('IMAGE', 'VIDEO', 'DOCUMENT') and header_media_url:
         key = header_format.lower()
+        media_obj = {'link': header_media_url}
+        if header_format == 'DOCUMENT' and header_filename:
+            media_obj['filename'] = header_filename
         components.append({
             'type': 'header',
-            'parameters': [{'type': key, key: {'link': header_media_url}}]
+            'parameters': [{'type': key, key: media_obj}]
         })
 
     if body_params:
@@ -172,7 +175,7 @@ def build_template_components(header_format, header_media_url, body_params, cont
 
 
 def send_worker(job_id, contacts, template_name, template_lang, creds, delay, user_id,
-                 header_format=None, header_media_url='', body_params=None):
+                 header_format=None, header_media_url='', header_filename='', body_params=None):
     set_job_status(job_id, 'running')
 
     for contact in contacts:
@@ -180,7 +183,7 @@ def send_worker(job_id, contacts, template_name, template_lang, creds, delay, us
 
         phone = contact['phone']
         name  = contact.get('name', '')
-        components = build_template_components(header_format, header_media_url, body_params, contact)
+        components = build_template_components(header_format, header_media_url, header_filename, body_params, contact)
         template = {'name': template_name, 'language': {'code': template_lang}}
         if components:
             template['components'] = components
@@ -264,6 +267,7 @@ def start_send():
     delay            = int(body.get('delay', 1))
     header_format    = (body.get('header_format')    or '').strip().upper()
     header_media_url = (body.get('header_media_url') or '').strip()
+    header_filename  = (body.get('header_filename')  or '').strip()
     body_params      = body.get('body_params') or []
 
     if not source_file or not template_name:
@@ -289,6 +293,7 @@ def start_send():
         kwargs={
             'header_format':    header_format,
             'header_media_url': header_media_url,
+            'header_filename':  header_filename,
             'body_params':      body_params,
         },
         daemon=True

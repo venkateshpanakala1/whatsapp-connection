@@ -288,7 +288,12 @@
     if (!currentTemplateName) return;
     const { headerFormat, varCount } = currentTemplateReq;
     const data = {};
-    if (headerFormat) data.headerMediaUrl = document.getElementById('header-media-url')?.value.trim() || '';
+    if (headerFormat) {
+      data.headerMediaUrl = document.getElementById('header-media-url')?.value.trim() || '';
+      if (headerFormat === 'DOCUMENT') {
+        data.headerFilename = document.getElementById('header-filename')?.value.trim() || '';
+      }
+    }
     if (varCount) {
       data.bodyParams = [];
       for (let i = 1; i <= varCount; i++) data.bodyParams.push(document.getElementById(`body-param-${i}`)?.value.trim() || '');
@@ -301,7 +306,7 @@
   async function onTemplateChange() {
     const val  = document.getElementById('template-select').value;
     const info = document.getElementById('template-info');
-    currentTemplateReq  = { headerFormat: null, varCount: 0, autoMediaUrl: null };
+    currentTemplateReq  = { headerFormat: null, varCount: 0, autoMediaUrl: null, autoFilename: null };
     currentTemplateName = '';
     if (!val) { info.classList.remove('show'); renderDynamicParams(); checkReady(); return; }
     const { name } = JSON.parse(val);
@@ -327,7 +332,10 @@
       try {
         const res  = await fetch(`/api/templates/media-url?name=${encodeURIComponent(name)}`);
         const data = await res.json();
-        if (data.has_media) currentTemplateReq.autoMediaUrl = data.url;
+        if (data.has_media) {
+          currentTemplateReq.autoMediaUrl  = data.url;
+          currentTemplateReq.autoFilename  = data.filename || null;
+        }
       } catch (e) {}
     }
 
@@ -337,7 +345,7 @@
 
   function renderDynamicParams() {
     const wrap = document.getElementById('dynamic-params');
-    const { headerFormat, varCount, autoMediaUrl } = currentTemplateReq;
+    const { headerFormat, varCount, autoMediaUrl, autoFilename } = currentTemplateReq;
     if (!headerFormat && !varCount) { wrap.style.display = 'none'; wrap.innerHTML = ''; return; }
 
     const saved = currentTemplateName ? loadTplParams(currentTemplateName) : {};
@@ -355,6 +363,15 @@
           <input type="text" id="header-media-url" placeholder="https://..." value="${esc(prefill)}" oninput="onParamInput()" />
           <p class="hint">${hint}</p>
         </div>`;
+      if (headerFormat === 'DOCUMENT') {
+        const namePrefill = autoFilename || saved.headerFilename || '';
+        html += `
+          <div class="form-group">
+            <label>Document Display Name</label>
+            <input type="text" id="header-filename" placeholder="e.g. Invoice.pdf" value="${esc(namePrefill)}" oninput="onParamInput()" />
+            <p class="hint">Shown to the contact in WhatsApp instead of "Untitled".</p>
+          </div>`;
+      }
     }
     for (let i = 1; i <= varCount; i++) {
       const savedVal = saved.bodyParams?.[i - 1] || '';
@@ -398,6 +415,7 @@
     const { name: template_name, lang: template_lang } = JSON.parse(tmplVal);
     const { headerFormat, varCount } = currentTemplateReq;
     const header_media_url = headerFormat ? document.getElementById('header-media-url').value.trim() : '';
+    const header_filename  = headerFormat === 'DOCUMENT' ? document.getElementById('header-filename').value.trim() : '';
     const body_params = [];
     for (let i = 1; i <= varCount; i++) body_params.push(document.getElementById(`body-param-${i}`).value.trim());
 
@@ -411,7 +429,7 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           source_file, template_name, template_lang, delay,
-          header_format: headerFormat || '', header_media_url, body_params,
+          header_format: headerFormat || '', header_media_url, header_filename, body_params,
         }),
       });
       const data = await res.json();

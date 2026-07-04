@@ -200,6 +200,12 @@
       <button class="btn-remove-file" onclick="removeFile()" title="Remove">✕</button>
     </div>
 
+    <div class="form-group" id="doc-filename-group" style="display:none">
+      <label>Document Display Name</label>
+      <input type="text" id="doc-filename" placeholder="e.g. Invoice.pdf" />
+      <p class="hint">This is the file name shown to the contact in WhatsApp (instead of "Untitled").</p>
+    </div>
+
     <div class="form-group" style="margin-top:16px">
       <label>Body Text <span style="color:#dc2626">*</span></label>
       <textarea id="tpl-body" placeholder="Hello {{1}}, your order {{2}} is confirmed!" oninput="updateCharCount()"></textarea>
@@ -276,7 +282,7 @@
         const attachHtml = needsMedia ? `
             <label class="btn-attach" style="margin-top:8px;font-size:11px;font-weight:600;color:var(--g-500);cursor:pointer;display:block;text-align:right">
               📎 Attach for Sending
-              <input type="file" accept="image/*,application/pdf,video/*" style="display:none" onchange="onAttachMediaSelected(this, '${t.name}')" />
+              <input type="file" accept="image/*,application/pdf,video/*" style="display:none" onchange="onAttachMediaSelected(this, '${t.name}', '${header.format}')" />
             </label>
             <span class="attach-status" id="attach-status-${t.name}" style="font-size:10px;color:var(--text-3);display:block;text-align:right;margin-top:2px"></span>` : '';
         return `
@@ -304,45 +310,55 @@
 
   // Stores the header image/doc in our own DB (keyed by template name) so
   // Bulk Send can auto-reuse it later — Meta doesn't keep the file we send
-  // during creation beyond the approval preview.
-  async function attachMediaToTemplate(name, file) {
+  // during creation beyond the approval preview. `filename` is what WhatsApp
+  // shows the contact for a document header (otherwise it shows "Untitled").
+  async function attachMediaToTemplate(name, file, filename) {
     try {
       const formData = new FormData();
       formData.append('name', name);
       formData.append('file', file);
+      if (filename) formData.append('filename', filename);
       const res  = await fetch('/api/templates/attach-media', { method: 'POST', body: formData });
       const data = await res.json();
       return !!data.success;
     } catch (e) { return false; }
   }
 
-  async function onAttachMediaSelected(input, name) {
+  async function onAttachMediaSelected(input, name, headerFormat) {
     const file = input.files[0];
     if (!file) return;
+    let filename = file.name;
+    if (headerFormat === 'DOCUMENT') {
+      filename = prompt('Document name to show in WhatsApp:', file.name) || file.name;
+    }
     const statusEl = document.getElementById(`attach-status-${name}`);
     if (statusEl) statusEl.textContent = 'Uploading…';
-    const ok = await attachMediaToTemplate(name, file);
+    const ok = await attachMediaToTemplate(name, file, filename);
     if (statusEl) statusEl.textContent = ok ? '✓ Attached' : '✗ Failed, try again';
   }
 
   function onHeaderTypeChange(val) {
-    const area = document.getElementById('upload-area');
-    const icon = document.getElementById('upload-icon');
-    const hint = document.getElementById('upload-hint');
-    const inp  = document.getElementById('file-input');
+    const area     = document.getElementById('upload-area');
+    const icon     = document.getElementById('upload-icon');
+    const hint     = document.getElementById('upload-hint');
+    const inp      = document.getElementById('file-input');
+    const fnameGrp = document.getElementById('doc-filename-group');
     removeFile();
     if (val === 'IMAGE') {
       area.classList.add('active');
       icon.textContent = '🖼️';
       hint.textContent = 'JPG, PNG, WEBP up to 5MB';
       inp.accept = 'image/jpeg,image/png,image/webp';
+      fnameGrp.style.display = 'none';
     } else if (val === 'DOCUMENT') {
       area.classList.add('active');
       icon.textContent = '📄';
       hint.textContent = 'PDF up to 100MB';
       inp.accept = 'application/pdf';
+      fnameGrp.style.display = 'block';
     } else {
       area.classList.remove('active');
+      fnameGrp.style.display = 'none';
     }
   }
 
@@ -361,12 +377,15 @@
     document.getElementById('preview-fname').textContent = name;
     document.getElementById('upload-progress').textContent = 'Ready to upload';
     document.getElementById('upload-preview').classList.add('active');
+    const docFilenameInp = document.getElementById('doc-filename');
+    if (docFilenameInp && !docFilenameInp.value) docFilenameInp.value = name;
   }
   function removeFile() {
     selectedFile = null; uploadedHandle = '';
     document.getElementById('file-input').value = '';
     document.getElementById('upload-preview').classList.remove('active');
     document.getElementById('upload-progress').textContent = '';
+    document.getElementById('doc-filename').value = '';
   }
 
   async function uploadMedia() {
@@ -411,7 +430,10 @@
       const data = await res.json();
       if (data.success) {
         if (header_type !== 'NONE' && selectedFile) {
-          await attachMediaToTemplate(name, selectedFile);
+          const docFilename = header_type === 'DOCUMENT'
+            ? (document.getElementById('doc-filename').value.trim() || selectedFile.name)
+            : '';
+          await attachMediaToTemplate(name, selectedFile, docFilename);
         }
         showAlert('create-alert', 'success', data.message + ' — Status: ' + (data.data?.status || 'PENDING'));
         resetForm(); loadTemplates();
@@ -434,6 +456,7 @@
     document.getElementById('tpl-header-type').value = 'NONE';
     document.getElementById('char-count').textContent = '0 / 1024';
     document.getElementById('upload-area').classList.remove('active');
+    document.getElementById('doc-filename-group').style.display = 'none';
     removeFile();
   }
   function showAlert(id, type, msg) {
