@@ -123,19 +123,30 @@ def resolve_contact_name(cur, user_id, phone, profile_name=None):
     1. The contact's own WhatsApp display name (from the webhook payload)
     2. The name you gave them in your imported Contacts list
     3. The name used the last time you bulk-sent to this number
+
+    Matches on the last 10 digits rather than exact string equality —
+    imported contacts are sometimes missing the country code, or include a
+    leading '+', while WhatsApp's webhook always sends the full number with
+    country code and no symbols. Exact matching silently misses those.
     """
     if profile_name:
         return profile_name
 
-    cur.execute('SELECT name FROM contacts WHERE user_id = %s AND phone = %s', (user_id, phone))
+    cur.execute("""
+        SELECT name FROM contacts
+        WHERE user_id = %s
+          AND RIGHT(regexp_replace(phone, '\\D', '', 'g'), 10) = RIGHT(regexp_replace(%s, '\\D', '', 'g'), 10)
+    """, (user_id, phone))
     row = cur.fetchone()
     if row and row[0]:
         return row[0]
 
     cur.execute("""
-        SELECT name FROM send_logs WHERE phone = %s AND status = 'sent' AND user_id = %s
+        SELECT name FROM send_logs
+        WHERE status = 'sent' AND user_id = %s
+          AND RIGHT(regexp_replace(phone, '\\D', '', 'g'), 10) = RIGHT(regexp_replace(%s, '\\D', '', 'g'), 10)
         ORDER BY sent_at DESC LIMIT 1
-    """, (phone, user_id))
+    """, (user_id, phone))
     row = cur.fetchone()
     return row[0] if row and row[0] else ''
 
@@ -161,9 +172,10 @@ def save_message(from_phone, message_body, message_type, wamid, user_id, directi
         if direction == 'in':
             cur.execute("""
                 SELECT template_name FROM send_logs
-                WHERE phone = %s AND status = 'sent' AND user_id = %s
+                WHERE status = 'sent' AND user_id = %s
+                  AND RIGHT(regexp_replace(phone, '\\D', '', 'g'), 10) = RIGHT(regexp_replace(%s, '\\D', '', 'g'), 10)
                 ORDER BY sent_at DESC LIMIT 1
-            """, (from_phone, user_id))
+            """, (user_id, from_phone))
             row = cur.fetchone()
             template_name = row[0] if row else 'direct'
             contact_name  = contact_name or resolve_contact_name(cur, user_id, from_phone, profile_name)

@@ -189,6 +189,10 @@ def backfill_reply_contact_names():
     local Contacts list, for numbers we already have a name for. Doesn't call
     Meta — WhatsApp only exposes a sender's profile name on the webhook event
     itself, so older rows can only be backfilled from data we already have.
+
+    Matches on the last 10 digits rather than exact string equality — some
+    imported contacts are missing the country code or have a leading '+',
+    while WhatsApp always sends the full number with country code.
     """
     conn = get_conn()
     try:
@@ -197,7 +201,8 @@ def backfill_reply_contact_names():
             UPDATE replies r
             SET contact_name = c.name
             FROM contacts c
-            WHERE r.user_id = c.user_id AND r.from_phone = c.phone
+            WHERE r.user_id = c.user_id
+              AND RIGHT(regexp_replace(r.from_phone, '\\D', '', 'g'), 10) = RIGHT(regexp_replace(c.phone, '\\D', '', 'g'), 10)
               AND (r.contact_name IS NULL OR r.contact_name = '')
               AND c.name IS NOT NULL AND c.name != ''
         """)
