@@ -4,6 +4,12 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Login — V³</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#075e54">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script src="/pwa.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -117,6 +123,20 @@
     .alert.success { display: block; background: #f0fdf4; color: #166534; border-color: #4ade80; }
     .alert.error   { display: block; background: #fef2f2; color: #991b1b; border-color: #f87171; }
     .alert.info    { display: block; background: #eff6ff; color: #1e40af; border-color: #60a5fa; }
+
+    /* Install App */
+    .btn-install {
+      display: none; width: 100%; padding: 12px;
+      background: #fff; color: #128c7e; margin-top: 10px;
+      border: 1.5px solid #128c7e; border-radius: 10px;
+      font-size: 14px; font-weight: 700; cursor: pointer;
+      font-family: inherit; transition: all 0.2s;
+    }
+    .btn-install:hover { background: #f0faf9; }
+    .ios-install-hint {
+      display: none; margin-top: 12px; font-size: 12px;
+      color: #6b7280; text-align: center; line-height: 1.5;
+    }
 
     /* Footer note */
     .footer-note {
@@ -402,6 +422,13 @@
     <button class="btn-login" id="login-btn" onclick="doLogin()">
       Sign In
     </button>
+
+    <button type="button" class="btn-install js-install-app" onclick="installApp()">
+      📲 Install App
+    </button>
+    <div class="ios-install-hint js-install-ios-hint">
+      On iPhone: tap <strong>Share</strong> then <strong>Add to Home Screen</strong> to install.
+    </div>
 
     <div class="alert" id="login-alert"></div>
   </div>
