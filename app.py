@@ -9,7 +9,7 @@ from routes.templates import templates_bp
 from routes.contacts import contacts_bp
 from routes.send import send_bp
 from routes.webhook import webhook_bp
-from routes.replies import replies_bp, resume_pending_counter_replies
+from routes.replies import replies_bp, resume_pending_counter_replies, backfill_reply_contact_names
 from routes.auth import auth_bp
 
 load_dotenv()
@@ -27,6 +27,7 @@ app.register_blueprint(replies_bp,   url_prefix='/api/replies')
 app.register_blueprint(auth_bp,      url_prefix='/api/auth')
 
 init_db()
+backfill_reply_contact_names()
 resume_pending_counter_replies()
 
 

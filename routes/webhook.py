@@ -38,6 +38,15 @@ def receive():
                 if user_id is None:
                     print(f'[WEBHOOK] WARNING: no user found for phone_number_id={phone_number_id!r}')
 
+                # Meta includes the sender's own WhatsApp display name here,
+                # keyed by wa_id, alongside every incoming message batch —
+                # no separate API call needed to get "the name of the person".
+                profile_names = {
+                    c.get('wa_id'): c.get('profile', {}).get('name')
+                    for c in value.get('contacts', [])
+                    if c.get('wa_id')
+                }
+
                 # ── Incoming messages (customer → business) ──────────────
                 for msg in value.get('messages', []):
                     from_phone = msg.get('from', '')
@@ -58,7 +67,10 @@ def receive():
                         msg_body = f'[{msg_type}]'
 
                     print(f'[WEBHOOK] incoming from={from_phone} body={msg_body!r} user_id={user_id}')
-                    save_message(from_phone, msg_body, msg_type, wamid, user_id, direction='in')
+                    save_message(
+                        from_phone, msg_body, msg_type, wamid, user_id, direction='in',
+                        profile_name=profile_names.get(from_phone)
+                    )
 
     except Exception as e:
         print(f'[WEBHOOK] error: {e}')
@@ -105,7 +117,31 @@ def lookup_user_by_phone_number_id(phone_number_id):
         put_conn(conn)
 
 
-def save_message(from_phone, message_body, message_type, wamid, user_id, direction='in'):
+def resolve_contact_name(cur, user_id, phone, profile_name=None):
+    """
+    Best available name for a phone number, in priority order:
+    1. The contact's own WhatsApp display name (from the webhook payload)
+    2. The name you gave them in your imported Contacts list
+    3. The name used the last time you bulk-sent to this number
+    """
+    if profile_name:
+        return profile_name
+
+    cur.execute('SELECT name FROM contacts WHERE user_id = %s AND phone = %s', (user_id, phone))
+    row = cur.fetchone()
+    if row and row[0]:
+        return row[0]
+
+    cur.execute("""
+        SELECT name FROM send_logs WHERE phone = %s AND status = 'sent' AND user_id = %s
+        ORDER BY sent_at DESC LIMIT 1
+    """, (phone, user_id))
+    row = cur.fetchone()
+    return row[0] if row and row[0] else ''
+
+
+def save_message(from_phone, message_body, message_type, wamid, user_id, direction='in',
+                  profile_name=None, contact_name=None):
     """Save an incoming or outgoing WhatsApp message to the replies table."""
     if not user_id:
         print(f'[WEBHOOK] save_message skipped: user_id is None (from={from_phone})')
@@ -122,20 +158,19 @@ def save_message(from_phone, message_body, message_type, wamid, user_id, directi
                 cur.close()
                 return
 
-        # For incoming messages — find contact name + template from send_logs
         if direction == 'in':
             cur.execute("""
-                SELECT template_name, name FROM send_logs
+                SELECT template_name FROM send_logs
                 WHERE phone = %s AND status = 'sent' AND user_id = %s
                 ORDER BY sent_at DESC LIMIT 1
             """, (from_phone, user_id))
             row = cur.fetchone()
             template_name = row[0] if row else 'direct'
-            contact_name  = row[1] if row else ''
+            contact_name  = contact_name or resolve_contact_name(cur, user_id, from_phone, profile_name)
         else:
-            # Outgoing — the caller sets these
+            # Outgoing — caller passes contact_name in explicitly (e.g. counter-reply)
             template_name = 'outgoing'
-            contact_name  = ''
+            contact_name  = contact_name or ''
 
         cur.execute("""
             INSERT INTO replies

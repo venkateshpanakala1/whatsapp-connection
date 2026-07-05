@@ -51,7 +51,7 @@ def update_cr_status(cr_id, status):
 MAX_WAIT_SECONDS = 24 * 60 * 60  # safety cap so a stuck template can't loop forever
 
 
-def counter_reply_worker(cr_id, phone, template_name, template_lang, creds, user_id=None, message_text=''):
+def counter_reply_worker(cr_id, phone, template_name, template_lang, creds, user_id=None, message_text='', contact_name=''):
     update_cr_status(cr_id, 'pending_approval')
 
     # Keep checking until Meta approves/rejects the template — no early give-up.
@@ -102,7 +102,7 @@ def counter_reply_worker(cr_id, phone, template_name, template_lang, creds, user
                     update_cr_status(cr_id, 'sent')
                     # Log outgoing reply in the replies table for conversation view
                     wamid = (send_data.get('messages') or [{}])[0].get('id', '')
-                    save_message(phone, message_text, 'text', wamid, user_id, direction='out')
+                    save_message(phone, message_text, 'text', wamid, user_id, direction='out', contact_name=contact_name)
                 return
 
             elif status == 'REJECTED':
@@ -175,12 +175,41 @@ def resume_pending_counter_replies():
             continue
         threading.Thread(
             target=counter_reply_worker,
-            args=(cr_id, phone, template_name, template_lang, creds, user_id, message_text),
+            args=(cr_id, phone, template_name, template_lang, creds, user_id, message_text, contact_name),
             daemon=True
         ).start()
 
     if rows:
         print(f'[replies] resumed {len(rows)} in-flight counter-repl{"y" if len(rows) == 1 else "ies"}')
+
+
+def backfill_reply_contact_names():
+    """
+    One-time-safe: fills in blank contact_name on existing replies using the
+    local Contacts list, for numbers we already have a name for. Doesn't call
+    Meta — WhatsApp only exposes a sender's profile name on the webhook event
+    itself, so older rows can only be backfilled from data we already have.
+    """
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE replies r
+            SET contact_name = c.name
+            FROM contacts c
+            WHERE r.user_id = c.user_id AND r.from_phone = c.phone
+              AND (r.contact_name IS NULL OR r.contact_name = '')
+              AND c.name IS NOT NULL AND c.name != ''
+        """)
+        updated = cur.rowcount
+        conn.commit()
+        cur.close()
+        if updated:
+            print(f'[replies] backfilled contact_name for {updated} replies from local contacts')
+    except Exception as e:
+        print(f'[replies] backfill_reply_contact_names error: {e}')
+    finally:
+        put_conn(conn)
 
 
 # GET /api/replies/templates
@@ -347,7 +376,7 @@ def counter_reply():
     _cr_jobs[str(cr_id)] = 'pending_approval'
     threading.Thread(
         target=counter_reply_worker,
-        args=(cr_id, phone, template_name, template_lang, creds, user_id, message_text),
+        args=(cr_id, phone, template_name, template_lang, creds, user_id, message_text, contact_name),
         daemon=True
     ).start()
 
