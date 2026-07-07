@@ -141,7 +141,20 @@ def init_db():
                 created_at TIMESTAMP DEFAULT NOW(),
                 UNIQUE(user_id, template_name)
             );
+
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER REFERENCES users(id),
+                endpoint TEXT NOT NULL,
+                p256dh VARCHAR(255) NOT NULL,
+                auth VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW(),
+                UNIQUE(endpoint)
+            );
         """)
+        # Defaults existing rows to read so old history doesn't suddenly
+        # appear unread; new incoming rows explicitly set FALSE at insert time.
+        cur.execute("ALTER TABLE replies ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT TRUE;")
         cur.execute("ALTER TABLE template_media ADD COLUMN IF NOT EXISTS filename VARCHAR(255);")
         # Migrations: add source_file + user_id to all tables
         cur.execute("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS source_file VARCHAR(255);")

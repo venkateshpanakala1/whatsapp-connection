@@ -695,3 +695,11 @@ tbody tr:hover td { background: #f0fdf9; }
   .nav-icon { font-size: 17px; }
   .nav-item { font-size: 9px; }
 }
+
+/* ── Installed app (Add to Home Screen) is Replies-only ──────
+   pwa.js enforces this with a redirect; this just hides the nav
+   links to the other screens so there's nothing to tap toward. ── */
+@media (display-mode: standalone) {
+  .sidebar-nav a.nav-item:not([href="/replies"]) { display: none; }
+  .nav-label { display: none; }
+}

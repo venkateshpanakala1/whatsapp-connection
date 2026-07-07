@@ -500,7 +500,7 @@
         } else {
           showAlert('success', '✓ Welcome back! Redirecting...');
         }
-        setTimeout(() => { window.location.href = '/'; }, 900);
+        setTimeout(() => { window.location.href = isStandalone() ? '/replies' : '/'; }, 900);
       } else {
         ratReveal('wrong pwd boss! 😬<br>try again');
         showAlert('error', data.error || 'Login failed');

@@ -29,12 +29,14 @@ def login():
             )
             user_id = cur.fetchone()[0]
             conn.commit()
+            session.permanent = True
             session['user_id'] = user_id
             session['email']   = email
             return jsonify({'success': True, 'new_user': True,  'message': 'Account created successfully'})
         else:
             user_id, pw_hash = row
             if check_password_hash(pw_hash, password):
+                session.permanent = True
                 session['user_id'] = user_id
                 session['email']   = email
                 return jsonify({'success': True, 'new_user': False, 'message': 'Welcome back!'})

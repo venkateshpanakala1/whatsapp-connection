@@ -14,115 +14,97 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/style.css">
   <style>
-    /* ── Filter bar ── */
-    .filter-bar {
-      background: var(--surface); border: 1px solid var(--border);
-      border-radius: var(--r); padding: 14px 20px;
-      margin-bottom: 20px; display: flex;
-      align-items: center; gap: 14px; flex-wrap: wrap;
-      box-shadow: var(--shadow);
-    }
-    .filter-bar label { font-size: 12px; font-weight: 600; color: var(--text-2); white-space: nowrap; text-transform: uppercase; letter-spacing: 0.4px; }
-    .filter-bar select { flex: 1; min-width: 200px; }
-    .count-badge {
-      background: #d1fae5; color: #065f46;
-      padding: 4px 14px; border-radius: 20px;
-      font-size: 12px; font-weight: 700; white-space: nowrap;
-    }
-    .live-dot {
-      display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-      background: var(--g-300); margin-right: 5px;
-      animation: pulseDot 1.5s infinite;
-    }
-
-    /* ── Table extras ── */
-    .td-phone { font-family: 'Courier New', monospace; color: var(--g-500); font-size: 13px; font-weight: 600; }
-    .td-name  { font-weight: 600; }
-    .td-msg-text {
-      white-space: nowrap; overflow: hidden;
-      text-overflow: ellipsis; max-width: 280px; display: block;
-      color: var(--text-2);
-    }
-    .td-time  { color: var(--text-3); font-size: 12px; white-space: nowrap; }
-
-    .btn-cr {
-      padding: 6px 16px; background: var(--g-500); color: #fff;
-      border: none; border-radius: 20px; font-size: 12px;
-      font-weight: 700; cursor: pointer; white-space: nowrap;
+    .btn-notify {
+      padding: 7px 14px; background: #fef9c3; border: 1.5px solid #fde047;
+      color: #713f12; border-radius: 8px; font-size: 12px; font-weight: 700;
+      cursor: pointer; font-family: inherit; white-space: nowrap;
       transition: all var(--t);
-      box-shadow: 0 2px 8px rgba(18,140,126,0.3);
     }
-    .btn-cr:hover {
-      background: #0e7569;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(18,140,126,0.4);
+    .btn-notify:hover { background: #fef08a; }
+
+    /* ── Two-pane chat layout ── */
+    .chat-layout {
+      display: flex; height: calc(100vh - 128px);
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--r); overflow: hidden; box-shadow: var(--shadow);
     }
 
-    /* ── Counter Reply Modal ── */
-    .cr-modal {
-      background: var(--surface); border-radius: var(--r-lg);
-      width: 420px; max-width: 96vw;
-      box-shadow: 0 24px 60px rgba(0,0,0,0.28);
-      overflow: hidden; display: flex; flex-direction: column;
-      animation: scaleIn 0.25s cubic-bezier(0.34,1.56,0.64,1) both;
+    .conv-list {
+      width: 340px; flex-shrink: 0; border-right: 1px solid var(--border);
+      overflow-y: auto; background: var(--surface);
     }
-    .cr-header {
-      background: linear-gradient(135deg, #0d6b5d 0%, #075e54 100%);
-      color: #fff; padding: 14px 18px;
+    .conv-item {
       display: flex; align-items: center; gap: 12px;
-    }
-    .cr-avatar {
-      width: 40px; height: 40px; border-radius: 50%;
-      background: rgba(255,255,255,0.2);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; font-weight: 800; flex-shrink: 0;
-    }
-    .cr-to-name  { font-size: 15px; font-weight: 700; }
-    .cr-to-phone { font-size: 12px; opacity: 0.7; margin-top: 1px; }
-    .cr-close {
-      margin-left: auto; background: rgba(255,255,255,0.15);
-      border: none; color: #fff; width: 30px; height: 30px;
-      border-radius: 50%; font-size: 16px; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
+      padding: 13px 16px; cursor: pointer; border-bottom: 1px solid #f3f4f6;
       transition: background var(--t);
     }
-    .cr-close:hover { background: rgba(255,255,255,0.25); }
+    .conv-item:hover { background: #f8fffe; }
+    .conv-item.active { background: #f0faf9; }
+    .conv-avatar {
+      width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--g-400), var(--g-700));
+      color: #fff; font-size: 17px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .conv-info { flex: 1; min-width: 0; }
+    .conv-name { font-size: 14px; font-weight: 700; color: var(--text); }
+    .conv-preview {
+      font-size: 12.5px; color: var(--text-2); margin-top: 2px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px;
+    }
+    .conv-meta { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+    .conv-time { font-size: 11px; color: var(--text-3); }
+    .conv-badge {
+      background: var(--g-300); color: #fff; font-size: 11px; font-weight: 700;
+      min-width: 19px; height: 19px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center; padding: 0 5px;
+    }
 
-    /* WA chat area */
-    .cr-chat {
+    .conv-thread { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+    .thread-empty {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      color: var(--text-3); font-size: 14px; text-align: center; padding: 40px;
+    }
+    .thread-active { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    .thread-header {
+      display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+      border-bottom: 1px solid var(--border); background: var(--surface);
+    }
+    .btn-back {
+      display: none; background: none; border: none; font-size: 20px;
+      cursor: pointer; color: var(--text-2); padding: 4px;
+    }
+    .thread-avatar {
+      width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+      background: linear-gradient(135deg, var(--g-400), var(--g-700));
+      color: #fff; font-size: 16px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .thread-name { font-size: 14.5px; font-weight: 700; color: var(--text); }
+    .thread-phone { font-size: 12px; color: var(--text-3); margin-top: 1px; }
+
+    .thread-messages {
+      flex: 1; overflow-y: auto; padding: 18px 22px;
+      display: flex; flex-direction: column; gap: 8px;
       background: #e5ddd5;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Ccircle cx='10' cy='10' r='1' fill='%23c9c0b4' fill-opacity='0.4'/%3E%3C/svg%3E");
-      padding: 16px; min-height: 120px;
-      display: flex; flex-direction: column; gap: 8px;
     }
-    .bubble-recv {
-      background: #fff; border-radius: 0 10px 10px 10px;
-      padding: 9px 13px; max-width: 85%;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-      font-size: 13.5px; color: #333; line-height: 1.5; position: relative;
+    .bubble-recv, .bubble-sent {
+      max-width: 65%; padding: 9px 13px; border-radius: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 13.5px;
+      color: #333; line-height: 1.5; position: relative; word-break: break-word;
     }
-    .bubble-recv::before {
-      content: ''; position: absolute; top: 0; left: -8px;
-      border-width: 0 8px 8px 0; border-style: solid;
-      border-color: transparent #fff transparent transparent;
-    }
-    .bubble-time { font-size: 11px; color: #aaa; text-align: right; margin-top: 4px; }
+    .bubble-recv { background: #fff; align-self: flex-start; border-top-left-radius: 0; }
+    .bubble-sent { background: #d9fdd3; align-self: flex-end; border-top-right-radius: 0; }
+    .bubble-time { font-size: 11px; color: #999; text-align: right; margin-top: 4px; }
 
-    /* Step dots */
     .step-dots {
       display: none; justify-content: center; gap: 8px;
-      padding: 10px 16px; background: #fafafa;
-      border-top: 1px solid var(--border);
+      padding: 10px 16px; background: #fafafa; border-top: 1px solid var(--border);
     }
     .step-dots.show { display: flex; }
-    .step-dot {
-      display: flex; align-items: center; gap: 4px;
-      font-size: 11px; color: var(--text-3);
-    }
-    .step-dot .dot {
-      width: 10px; height: 10px; border-radius: 50%; background: #e5e7eb; flex-shrink: 0;
-      transition: all var(--t);
-    }
+    .step-dot { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-3); }
+    .step-dot .dot { width: 10px; height: 10px; border-radius: 50%; background: #e5e7eb; flex-shrink: 0; transition: all var(--t); }
     .step-dot.active .dot { background: var(--g-300); animation: pulseDot 1s infinite; }
     .step-dot.done   .dot { background: var(--g-500); }
     .step-dot.error  .dot { background: #ef4444; }
@@ -130,38 +112,40 @@
     .step-dot.done   { color: var(--g-500); }
     .step-dot.error  { color: #ef4444; }
 
-    /* Status bar */
-    .cr-status-bar {
-      padding: 9px 16px; font-size: 12.5px; text-align: center; display: none;
-    }
+    .cr-status-bar { padding: 9px 16px; font-size: 12.5px; text-align: center; display: none; }
     .cr-status-bar.show { display: block; }
-    .cr-status-bar.step-creating  { background: #fef9c3; color: #92400e; }
-    .cr-status-bar.step-pending   { background: #eff6ff; color: #1d4ed8; }
-    .cr-status-bar.step-approved  { background: #d1fae5; color: #065f46; }
-    .cr-status-bar.step-sent      { background: #d1fae5; color: #065f46; font-weight: 700; }
-    .cr-status-bar.step-error     { background: #fef2f2; color: #991b1b; }
+    .cr-status-bar.step-creating { background: #fef9c3; color: #92400e; }
+    .cr-status-bar.step-pending  { background: #eff6ff; color: #1d4ed8; }
+    .cr-status-bar.step-approved { background: #d1fae5; color: #065f46; }
+    .cr-status-bar.step-sent     { background: #d1fae5; color: #065f46; font-weight: 700; }
+    .cr-status-bar.step-error    { background: #fef2f2; color: #991b1b; }
 
-    /* Input area */
-    .cr-input-area {
+    .thread-input {
       padding: 12px 14px; border-top: 1px solid var(--border);
       display: flex; gap: 10px; align-items: flex-end; background: #f0f0f0;
     }
-    .cr-textarea {
-      flex: 1; border: none; border-radius: 22px;
-      padding: 10px 16px; font-size: 14px; outline: none;
-      resize: none; font-family: inherit; background: #fff;
-      max-height: 120px; min-height: 42px; line-height: 1.5;
+    .thread-input textarea {
+      flex: 1; border: none; border-radius: 22px; padding: 10px 16px;
+      font-size: 14px; outline: none; resize: none; font-family: inherit;
+      background: #fff; max-height: 120px; min-height: 42px; line-height: 1.5;
     }
-    .cr-send-btn {
-      width: 42px; height: 42px; border-radius: 50%;
-      background: var(--g-500); border: none; color: #fff;
-      font-size: 18px; cursor: pointer; flex-shrink: 0;
+    .thread-input button {
+      width: 42px; height: 42px; border-radius: 50%; background: var(--g-500);
+      border: none; color: #fff; font-size: 18px; cursor: pointer; flex-shrink: 0;
       display: flex; align-items: center; justify-content: center;
-      transition: all var(--t);
-      box-shadow: 0 2px 8px rgba(18,140,126,0.4);
+      transition: all var(--t); box-shadow: 0 2px 8px rgba(18,140,126,0.4);
     }
-    .cr-send-btn:hover:not(:disabled) { background: #0e7569; transform: scale(1.08); }
-    .cr-send-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .thread-input button:hover:not(:disabled) { background: #0e7569; transform: scale(1.08); }
+    .thread-input button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+    @media (max-width: 768px) {
+      .chat-layout { height: calc(100vh - 158px); }
+      .conv-list { width: 100%; border-right: none; }
+      .conv-thread { display: none; }
+      .btn-back { display: block; }
+      .chat-layout.thread-open .conv-list { display: none; }
+      .chat-layout.thread-open .conv-thread { display: flex; }
+    }
   </style>
 </head>
 <body>
@@ -201,9 +185,10 @@
   <div class="page-hdr">
     <div>
       <div class="ph-title">Replies</div>
-      <div class="ph-sub">Incoming messages from your contacts</div>
+      <div class="ph-sub">Chat with your contacts</div>
     </div>
     <div class="ph-user">
+      <button class="btn-notify" id="notify-btn" onclick="handleEnablePush()" style="display:none">🔔 Enable Notifications</button>
       <div class="ph-email-chip">
         <span class="ph-avatar" id="hdr-avatar">?</span>
         <span class="ph-email" id="hdr-email"></span>
@@ -212,74 +197,47 @@
     </div>
   </div>
 
-  <!-- Filter bar -->
-  <div class="filter-bar">
-    <label>Template</label>
-    <select id="template-select" onchange="loadReplies()">
-      <option value="all">All Templates</option>
-    </select>
-    <span class="count-badge" id="reply-count" style="display:none"></span>
-    <button class="btn btn-outline btn-sm" onclick="loadReplies()">
-      <span class="live-dot"></span>Refresh
-    </button>
-  </div>
-
-  <!-- Replies table -->
-  <div class="table-wrap" id="table-wrap">
-    <div class="empty-state">
-      <div class="empty-icon">⏳</div>
-      <div class="empty-text">Loading replies...</div>
+  <div class="chat-layout" id="chat-layout">
+    <div class="conv-list" id="conv-list">
+      <div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>
     </div>
-  </div>
-</div>
-
-<!-- Counter Reply Modal -->
-<div class="modal-overlay" id="cr-modal-overlay" onclick="closeCROnBg(event)">
-  <div class="cr-modal">
-
-    <div class="cr-header">
-      <div class="cr-avatar" id="cr-avatar">?</div>
-      <div>
-        <div class="cr-to-name"  id="cr-to-name">Name</div>
-        <div class="cr-to-phone" id="cr-to-phone">+91...</div>
-      </div>
-      <button class="cr-close" onclick="closeCR()">✕</button>
-    </div>
-
-    <div class="cr-chat">
-      <div class="bubble-recv">
-        <div id="cr-orig-msg"></div>
-        <div class="bubble-time" id="cr-orig-time"></div>
+    <div class="conv-thread" id="conv-thread">
+      <div class="thread-empty" id="thread-empty">Select a conversation to view messages</div>
+      <div class="thread-active" id="thread-active" style="display:none">
+        <div class="thread-header">
+          <button class="btn-back" onclick="closeThread()">←</button>
+          <div class="thread-avatar" id="thread-avatar">?</div>
+          <div>
+            <div class="thread-name" id="thread-name"></div>
+            <div class="thread-phone" id="thread-phone"></div>
+          </div>
+        </div>
+        <div class="thread-messages" id="thread-messages"></div>
+        <div class="step-dots" id="step-dots">
+          <div class="step-dot" id="step-1"><span class="dot"></span>Creating</div>
+          <span style="color:#d1d5db;font-size:14px">›</span>
+          <div class="step-dot" id="step-2"><span class="dot"></span>Approval</div>
+          <span style="color:#d1d5db;font-size:14px">›</span>
+          <div class="step-dot" id="step-3"><span class="dot"></span>Sending</div>
+          <span style="color:#d1d5db;font-size:14px">›</span>
+          <div class="step-dot" id="step-4"><span class="dot"></span>Sent</div>
+        </div>
+        <div class="cr-status-bar" id="cr-status-bar"></div>
+        <div class="thread-input" id="thread-input">
+          <textarea id="reply-textarea" placeholder="Type a message..." rows="1" oninput="autoResize(this)"></textarea>
+          <button id="reply-send-btn" onclick="sendReply()" title="Send">➤</button>
+        </div>
       </div>
     </div>
-
-    <div class="step-dots" id="step-dots">
-      <div class="step-dot" id="step-1"><span class="dot"></span>Creating</div>
-      <span style="color:#d1d5db;font-size:14px">›</span>
-      <div class="step-dot" id="step-2"><span class="dot"></span>Approval</div>
-      <span style="color:#d1d5db;font-size:14px">›</span>
-      <div class="step-dot" id="step-3"><span class="dot"></span>Sending</div>
-      <span style="color:#d1d5db;font-size:14px">›</span>
-      <div class="step-dot" id="step-4"><span class="dot"></span>Sent</div>
-    </div>
-
-    <div class="cr-status-bar" id="cr-status-bar"></div>
-
-    <div class="cr-input-area" id="cr-input-area">
-      <textarea class="cr-textarea" id="cr-textarea"
-                placeholder="Type your reply..." rows="1"
-                oninput="autoResize(this)"></textarea>
-      <button class="cr-send-btn" id="cr-send-btn" onclick="sendCR()" title="Send">➤</button>
-    </div>
-
   </div>
 </div>
 
 <script>
   const API = '/api/replies';
-  let currentCR = {};
-  let crEventSource = null;
-  let _repliesMap = {};
+  let conversations   = [];
+  let currentPhone    = null;
+  let currentName     = '';
+  let crEventSource   = null;
 
   async function loadSidebarStatus() {
     try {
@@ -295,117 +253,89 @@
     } catch (e) {}
   }
 
-  async function loadTemplates() {
-    const sel = document.getElementById('template-select');
+  async function loadConversations() {
     try {
-      const logRes  = await fetch(`${API}/templates`);
-      const logData = await logRes.json();
-      const seen    = new Set();
-      (logData.templates || []).forEach(t => {
-        const opt = document.createElement('option');
-        opt.value = t.name;
-        opt.textContent = `${t.name}  (${t.sent_count} sent)`;
-        sel.appendChild(opt); seen.add(t.name);
-      });
-      const metaRes  = await fetch('/api/send/templates');
-      const metaData = await metaRes.json();
-      (metaData.all || metaData.templates || []).forEach(t => {
-        if (!seen.has(t.name)) {
-          const opt = document.createElement('option');
-          opt.value = t.name;
-          opt.textContent = `${t.name}  [${t.language}]`;
-          sel.appendChild(opt);
-        }
-      });
-    } catch (e) {}
-  }
-
-  async function loadReplies() {
-    const template = document.getElementById('template-select').value;
-    const wrap     = document.getElementById('table-wrap');
-    try {
-      const res  = await fetch(`${API}/list?template=${encodeURIComponent(template)}`);
+      const res  = await fetch(`${API}/conversations`);
       const data = await res.json();
-      const badge = document.getElementById('reply-count');
-      if (data.count > 0) {
-        badge.textContent = data.count + ' replies';
-        badge.style.display = 'inline';
-      } else {
-        badge.style.display = 'none';
-      }
-      if (!data.replies || !data.replies.length) {
-        wrap.innerHTML = `
-          <div class="empty-state">
-            <div class="empty-icon">📭</div>
-            <div class="empty-text">No replies yet.</div>
-            <div class="empty-sub">Replies appear here when contacts respond to your messages.</div>
-          </div>`;
-        return;
-      }
-      _repliesMap = {};
-      const rows = data.replies.map(r => {
-        _repliesMap[r.id] = r;
-        const time = r.received_at ? new Date(r.received_at).toLocaleString() : '';
-        const isOut = r.direction === 'out';
-        const dirBadge = isOut
-          ? '<span style="background:#dcfce7;color:#15803d;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px">↑ Sent</span>'
-          : '<span style="background:#eff6ff;color:#1d4ed8;font-size:10px;font-weight:700;padding:2px 8px;border-radius:20px">↓ In</span>';
-        return `
-          <tr style="${isOut ? 'background:#f0fdf4' : ''}">
-            <td class="td-phone">${esc(r.from_phone)}</td>
-            <td class="td-name">${esc(r.contact_name || '—')}</td>
-            <td><span class="td-msg-text" title="${esc(r.message_body)}">${esc(r.message_body)}</span></td>
-            <td>${dirBadge}</td>
-            <td class="td-time">${time}</td>
-            <td>${isOut ? '' : `<button class="btn-cr" onclick="openCR(${r.id})">↩ Reply</button>`}</td>
-          </tr>`;
-      }).join('');
-      wrap.innerHTML = `
-        <table>
-          <thead>
-            <tr>
-              <th>Phone</th><th>Name</th><th>Message</th><th>Dir</th><th>Time</th><th>Action</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>`;
+      conversations = data.conversations || [];
+      renderConversationList();
     } catch (e) {
-      wrap.innerHTML = `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+      document.getElementById('conv-list').innerHTML =
+        `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
     }
   }
 
-  /* ── Counter Reply modal ── */
-  async function openCR(id) {
-    const data = _repliesMap[id];
-    if (!data) return;
-    currentCR = data;
-    const name = data.contact_name || data.from_phone;
-    document.getElementById('cr-avatar').textContent   = name.charAt(0).toUpperCase();
-    document.getElementById('cr-to-name').textContent  = name;
-    document.getElementById('cr-to-phone').textContent = data.from_phone;
-    document.getElementById('cr-orig-msg').textContent = data.message_body;
-    document.getElementById('cr-orig-time').textContent = data.received_at
-      ? new Date(data.received_at).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '';
-    document.getElementById('cr-textarea').value = '';
-    document.getElementById('cr-send-btn').disabled = false;
-    document.getElementById('cr-input-area').style.display = 'flex';
+  function renderConversationList() {
+    const list = document.getElementById('conv-list');
+    if (!conversations.length) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">📭</div>
+          <div class="empty-text">No conversations yet.</div>
+          <div class="empty-sub">Replies appear here when contacts respond to your messages.</div>
+        </div>`;
+      return;
+    }
+    list.innerHTML = conversations.map(c => {
+      const name   = c.contact_name || c.phone;
+      const isOut  = c.direction === 'out';
+      const prefix = isOut ? 'You: ' : '';
+      const preview = c.message_type === 'text' ? c.message_body : `[${c.message_type}]`;
+      const time = c.received_at
+        ? new Date(c.received_at).toLocaleString([], {hour:'2-digit', minute:'2-digit', month:'short', day:'numeric'})
+        : '';
+      const badge = c.unread_count > 0 ? `<span class="conv-badge">${c.unread_count}</span>` : '';
+      const active = c.phone === currentPhone ? 'active' : '';
+      return `
+        <div class="conv-item ${active}" onclick="openConversation('${esc(c.phone)}', '${esc(name).replace(/'/g,"\\'")}')">
+          <div class="conv-avatar">${esc(name).charAt(0).toUpperCase()}</div>
+          <div class="conv-info">
+            <div class="conv-name">${esc(name)}</div>
+            <div class="conv-preview">${esc(prefix + preview)}</div>
+          </div>
+          <div class="conv-meta">
+            <span class="conv-time">${time}</span>
+            ${badge}
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  async function openConversation(phone, name) {
+    currentPhone = phone;
+    currentName  = name;
+
+    document.getElementById('thread-empty').style.display = 'none';
+    document.getElementById('thread-active').style.display = 'flex';
+    document.getElementById('chat-layout').classList.add('thread-open');
+    document.getElementById('thread-avatar').textContent = name.charAt(0).toUpperCase();
+    document.getElementById('thread-name').textContent    = name;
+    document.getElementById('thread-phone').textContent   = phone;
+    document.getElementById('reply-textarea').value = '';
+    document.getElementById('reply-send-btn').disabled = false;
+    document.getElementById('thread-input').style.display = 'flex';
     document.getElementById('step-dots').classList.remove('show');
     document.getElementById('cr-status-bar').classList.remove('show');
     resetSteps();
-    document.getElementById('cr-modal-overlay').classList.add('open');
-    document.getElementById('cr-textarea').focus();
 
-    // A counter-reply to this contact may already be running server-side
-    // (e.g. you closed/refreshed the page earlier) — reconnect to it instead
-    // of losing track of it, since the backend keeps checking regardless.
+    // Optimistically clear the unread badge — the server marks it read too.
+    const conv = conversations.find(c => c.phone === phone);
+    if (conv) conv.unread_count = 0;
+    renderConversationList();
+
+    await loadConversationMessages(phone);
+    document.getElementById('reply-textarea').focus();
+
+    // A counter-reply to this contact may already be running server-side —
+    // reconnect to it instead of losing track of it.
     try {
-      const res    = await fetch(`${API}/cr-active?phone=${encodeURIComponent(data.from_phone)}`);
+      const res    = await fetch(`${API}/cr-active?phone=${encodeURIComponent(phone)}`);
       const active = await res.json();
       if (active.active) {
-        document.getElementById('cr-input-area').style.display = 'none';
+        document.getElementById('thread-input').style.display = 'none';
         document.getElementById('step-dots').classList.add('show');
         setStep(1, 'active');
-        showStatus('Reconnecting to a reply already in progress for this contact…', 'step-pending');
+        showStatus('Reconnecting to a reply already in progress…', 'step-pending');
         if (crEventSource) crEventSource.close();
         crEventSource = new EventSource(`${API}/cr-status/${active.cr_id}`);
         crEventSource.onmessage = e => { handleCRStatus(JSON.parse(e.data).status); };
@@ -413,23 +343,39 @@
     } catch (e) {}
   }
 
-  function closeCR() {
-    document.getElementById('cr-modal-overlay').classList.remove('open');
-    if (crEventSource) { crEventSource.close(); crEventSource = null; }
+  async function loadConversationMessages(phone) {
+    try {
+      const res  = await fetch(`${API}/conversation/${encodeURIComponent(phone)}`);
+      const data = await res.json();
+      const wrap = document.getElementById('thread-messages');
+      wrap.innerHTML = (data.messages || []).map(m => {
+        const isOut = m.direction === 'out';
+        const body  = m.message_type === 'text' ? m.message_body : `[${m.message_type}]`;
+        const time  = m.received_at ? new Date(m.received_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+        return `
+          <div class="${isOut ? 'bubble-sent' : 'bubble-recv'}">
+            <div>${esc(body)}</div>
+            <div class="bubble-time">${time}</div>
+          </div>`;
+      }).join('');
+      wrap.scrollTop = wrap.scrollHeight;
+    } catch (e) {}
   }
-  function closeCROnBg(e) {
-    if (e.target === document.getElementById('cr-modal-overlay')) closeCR();
+
+  function closeThread() {
+    document.getElementById('chat-layout').classList.remove('thread-open');
   }
+
   function autoResize(el) {
     el.style.height = 'auto';
     el.style.height = Math.min(el.scrollHeight, 120) + 'px';
   }
 
-  async function sendCR() {
-    const text = document.getElementById('cr-textarea').value.trim();
-    if (!text) return;
-    document.getElementById('cr-send-btn').disabled = true;
-    document.getElementById('cr-input-area').style.display = 'none';
+  async function sendReply() {
+    const text = document.getElementById('reply-textarea').value.trim();
+    if (!text || !currentPhone) return;
+    document.getElementById('reply-send-btn').disabled = true;
+    document.getElementById('thread-input').style.display = 'none';
     document.getElementById('step-dots').classList.add('show');
     setStep(1, 'active');
     showStatus('Creating template…', 'step-creating');
@@ -437,8 +383,8 @@
       const res  = await fetch(`${API}/counter-reply`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone:        currentCR.from_phone,
-          contact_name: currentCR.contact_name || '',
+          phone:        currentPhone,
+          contact_name: currentName || '',
           message_text: text,
         }),
       });
@@ -446,8 +392,8 @@
       if (!data.success) {
         setStep(1, 'error');
         showStatus('Failed: ' + (data.error || 'Unknown error'), 'step-error');
-        document.getElementById('cr-input-area').style.display = 'flex';
-        document.getElementById('cr-send-btn').disabled = false;
+        document.getElementById('thread-input').style.display = 'flex';
+        document.getElementById('reply-send-btn').disabled = false;
         return;
       }
       setStep(1, 'done'); setStep(2, 'active');
@@ -458,8 +404,8 @@
     } catch (e) {
       setStep(1, 'error');
       showStatus('Server error: ' + e.message, 'step-error');
-      document.getElementById('cr-input-area').style.display = 'flex';
-      document.getElementById('cr-send-btn').disabled = false;
+      document.getElementById('thread-input').style.display = 'flex';
+      document.getElementById('reply-send-btn').disabled = false;
     }
   }
 
@@ -477,18 +423,33 @@
       setStep(3,'done'); setStep(4,'done');
       showStatus('✓ Message sent successfully!', 'step-sent');
       if (crEventSource) { crEventSource.close(); crEventSource = null; }
+      document.getElementById('reply-textarea').value = '';
+      loadConversationMessages(currentPhone);
+      loadConversations();
+      setTimeout(() => {
+        document.getElementById('step-dots').classList.remove('show');
+        document.getElementById('cr-status-bar').classList.remove('show');
+        document.getElementById('thread-input').style.display = 'flex';
+        document.getElementById('reply-send-btn').disabled = false;
+      }, 1200);
     } else if (status === 'rejected') {
       setStep(2,'error');
       showStatus('Template was rejected by Meta.', 'step-error');
       if (crEventSource) { crEventSource.close(); crEventSource = null; }
+      document.getElementById('thread-input').style.display = 'flex';
+      document.getElementById('reply-send-btn').disabled = false;
     } else if (status === 'timeout') {
       setStep(2,'error');
       showStatus('Meta did not approve the template within 24 hours.', 'step-error');
       if (crEventSource) { crEventSource.close(); crEventSource = null; }
+      document.getElementById('thread-input').style.display = 'flex';
+      document.getElementById('reply-send-btn').disabled = false;
     } else if (status && status.startsWith('send_failed')) {
       setStep(3,'error');
       showStatus('Send failed: ' + status.replace('send_failed: ',''), 'step-error');
       if (crEventSource) { crEventSource.close(); crEventSource = null; }
+      document.getElementById('thread-input').style.display = 'flex';
+      document.getElementById('reply-send-btn').disabled = false;
     }
   }
 
@@ -503,9 +464,28 @@
     return (str||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  setInterval(loadReplies, 15000);
+  async function handleEnablePush() {
+    const btn = document.getElementById('notify-btn');
+    btn.disabled = true; btn.textContent = 'Enabling…';
+    const ok = await enablePush();
+    if (ok) { btn.style.display = 'none'; }
+    else { btn.disabled = false; btn.textContent = '🔔 Enable Notifications'; }
+  }
+
+  // Push arrived while this page was open — refresh immediately instead of
+  // waiting for the next poll tick.
+  window.addEventListener('push-new-reply', () => {
+    loadConversations();
+    if (currentPhone) loadConversationMessages(currentPhone);
+  });
+
+  setInterval(loadConversations, 20000);
   loadSidebarStatus();
-  loadTemplates().then(() => loadReplies());
+  loadConversations();
+
+  if (typeof Notification !== 'undefined' && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+    document.getElementById('notify-btn').style.display = 'inline-flex';
+  }
 
   async function loadSidebarUser() {
     try {

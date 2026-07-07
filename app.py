@@ -2,6 +2,7 @@ from flask import Flask, send_from_directory, session, redirect
 from flask_cors import CORS
 from functools import wraps
 import os
+from datetime import timedelta
 from dotenv import load_dotenv
 from db import init_db
 from routes.whatsapp import whatsapp_bp
@@ -11,11 +12,13 @@ from routes.send import send_bp
 from routes.webhook import webhook_bp
 from routes.replies import replies_bp, resume_pending_counter_replies, backfill_reply_contact_names
 from routes.auth import auth_bp
+from routes.push import push_bp
 
 load_dotenv()
 
 app = Flask(__name__, static_folder='public', static_url_path='')
 app.secret_key = os.getenv('SECRET_KEY', 'wa-saas-dev-secret-change-in-prod')
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(days=30)
 CORS(app, supports_credentials=True)
 
 app.register_blueprint(whatsapp_bp, url_prefix='/api/whatsapp')
@@ -25,6 +28,7 @@ app.register_blueprint(send_bp,      url_prefix='/api/send')
 app.register_blueprint(webhook_bp)
 app.register_blueprint(replies_bp,   url_prefix='/api/replies')
 app.register_blueprint(auth_bp,      url_prefix='/api/auth')
+app.register_blueprint(push_bp,      url_prefix='/api/push')
 
 init_db()
 backfill_reply_contact_names()

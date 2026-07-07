@@ -1,7 +1,9 @@
 from flask import Blueprint, request, jsonify
 from db import get_conn, put_conn
+from routes.push import send_push_to_user
 import os
 import json
+import threading
 
 webhook_bp = Blueprint('webhook', __name__)
 VERIFY_TOKEN = os.getenv('WEBHOOK_VERIFY_TOKEN', 'myverifytoken123')
@@ -179,19 +181,29 @@ def save_message(from_phone, message_body, message_type, wamid, user_id, directi
             row = cur.fetchone()
             template_name = row[0] if row else 'direct'
             contact_name  = contact_name or resolve_contact_name(cur, user_id, from_phone, profile_name)
+            is_read = False
         else:
             # Outgoing — caller passes contact_name in explicitly (e.g. counter-reply)
             template_name = 'outgoing'
             contact_name  = contact_name or ''
+            is_read = True
 
         cur.execute("""
             INSERT INTO replies
-                (user_id, from_phone, message_body, message_type, template_name, contact_name, wamid, direction)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """, (user_id, from_phone, message_body, message_type, template_name, contact_name, wamid, direction))
+                (user_id, from_phone, message_body, message_type, template_name, contact_name, wamid, direction, is_read)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (user_id, from_phone, message_body, message_type, template_name, contact_name, wamid, direction, is_read))
         conn.commit()
         cur.close()
         print(f'[WEBHOOK] saved {direction} message from={from_phone}')
+
+        if direction == 'in':
+            # Push notification shouldn't delay the webhook's response to Meta
+            threading.Thread(
+                target=send_push_to_user,
+                args=(user_id, contact_name or from_phone, message_body),
+                daemon=True
+            ).start()
     except Exception as e:
         conn.rollback()
         print(f'[WEBHOOK] save_message error: {e}')

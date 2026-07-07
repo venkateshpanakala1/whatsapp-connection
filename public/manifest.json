@@ -2,7 +2,7 @@
   "name": "V³ WhatsApp SaaS",
   "short_name": "V³",
   "description": "Manage WhatsApp templates, contacts, bulk sends and replies.",
-  "start_url": "/login",
+  "start_url": "/replies",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

@@ -217,71 +217,48 @@ def backfill_reply_contact_names():
         put_conn(conn)
 
 
-# GET /api/replies/templates
-@replies_bp.route('/templates', methods=['GET'])
-def list_templates():
+# GET /api/replies/conversations
+# One row per contact (most-recent activity first), like a WhatsApp chat list.
+@replies_bp.route('/conversations', methods=['GET'])
+def list_conversations():
     user_id = session.get('user_id')
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute("""
-            SELECT template_name, COUNT(*) as sent_count, MAX(sent_at) as last_sent
-            FROM send_logs WHERE status = 'sent' AND user_id = %s
-              AND template_name NOT LIKE 'cr\\_%%' ESCAPE '\\'
-            GROUP BY template_name
-            ORDER BY MAX(sent_at) DESC
-        """, (user_id,))
+            WITH latest AS (
+                SELECT DISTINCT ON (from_phone)
+                    from_phone, contact_name, message_body, message_type, direction, received_at
+                FROM replies
+                WHERE user_id = %s
+                ORDER BY from_phone, received_at DESC
+            ),
+            unread AS (
+                SELECT from_phone, COUNT(*) as cnt
+                FROM replies
+                WHERE user_id = %s AND direction = 'in' AND is_read = FALSE
+                GROUP BY from_phone
+            )
+            SELECT latest.from_phone, latest.contact_name, latest.message_body,
+                   latest.message_type, latest.direction, latest.received_at,
+                   COALESCE(unread.cnt, 0) as unread_count
+            FROM latest
+            LEFT JOIN unread ON unread.from_phone = latest.from_phone
+            ORDER BY latest.received_at DESC
+        """, (user_id, user_id))
         rows = cur.fetchall()
         cur.close()
         return jsonify({
             'success': True,
-            'templates': [
-                {'name': r[0], 'sent_count': r[1], 'last_sent': r[2].isoformat() if r[2] else ''}
-                for r in rows
-            ]
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    finally:
-        put_conn(conn)
-
-
-# GET /api/replies/list?template=xxx
-@replies_bp.route('/list', methods=['GET'])
-def list_replies():
-    user_id  = session.get('user_id')
-    template = request.args.get('template', '').strip()
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        if template and template != 'all':
-            cur.execute("""
-                SELECT id, from_phone, contact_name, message_body, message_type, received_at,
-                       COALESCE(direction, 'in') as direction
-                FROM replies WHERE user_id = %s AND template_name = %s
-                ORDER BY received_at DESC
-            """, (user_id, template))
-        else:
-            cur.execute("""
-                SELECT id, from_phone, contact_name, message_body, message_type, received_at,
-                       COALESCE(direction, 'in') as direction
-                FROM replies WHERE user_id = %s
-                ORDER BY received_at DESC
-            """, (user_id,))
-        rows = cur.fetchall()
-        cur.close()
-        return jsonify({
-            'success': True,
-            'count':   len(rows),
-            'replies': [
+            'conversations': [
                 {
-                    'id':           r[0],
-                    'from_phone':   r[1],
-                    'contact_name': r[2] or '',
-                    'message_body': r[3],
-                    'message_type': r[4],
-                    'received_at':  r[5].isoformat() if r[5] else '',
-                    'direction':    r[6],
+                    'phone':         r[0],
+                    'contact_name':  r[1] or '',
+                    'message_body':  r[2],
+                    'message_type':  r[3],
+                    'direction':     r[4],
+                    'received_at':   r[5].isoformat() if r[5] else '',
+                    'unread_count':  r[6],
                 }
                 for r in rows
             ]
@@ -292,25 +269,43 @@ def list_replies():
         put_conn(conn)
 
 
-# GET /api/replies/count
-@replies_bp.route('/count', methods=['GET'])
-def reply_count():
-    user_id  = session.get('user_id')
-    template = request.args.get('template', '').strip()
+# GET /api/replies/conversation/<phone>
+# Full chat history with one contact; opening it marks their unread
+# incoming messages as read, clearing the unread badge immediately.
+@replies_bp.route('/conversation/<phone>', methods=['GET'])
+def get_conversation(phone):
+    user_id = session.get('user_id')
     conn = get_conn()
     try:
         cur = conn.cursor()
-        if template and template != 'all':
-            cur.execute(
-                'SELECT COUNT(*) FROM replies WHERE user_id = %s AND template_name = %s',
-                (user_id, template)
-            )
-        else:
-            cur.execute('SELECT COUNT(*) FROM replies WHERE user_id = %s', (user_id,))
-        count = cur.fetchone()[0]
+        cur.execute("""
+            UPDATE replies SET is_read = TRUE
+            WHERE user_id = %s AND from_phone = %s AND direction = 'in' AND is_read = FALSE
+        """, (user_id, phone))
+        conn.commit()
+
+        cur.execute("""
+            SELECT id, message_body, message_type, direction, received_at
+            FROM replies WHERE user_id = %s AND from_phone = %s
+            ORDER BY received_at ASC
+        """, (user_id, phone))
+        rows = cur.fetchall()
         cur.close()
-        return jsonify({'success': True, 'count': count})
+        return jsonify({
+            'success': True,
+            'messages': [
+                {
+                    'id':           r[0],
+                    'message_body': r[1],
+                    'message_type': r[2],
+                    'direction':    r[3],
+                    'received_at':  r[4].isoformat() if r[4] else '',
+                }
+                for r in rows
+            ]
+        })
     except Exception as e:
+        conn.rollback()
         return jsonify({'error': str(e)}), 500
     finally:
         put_conn(conn)
