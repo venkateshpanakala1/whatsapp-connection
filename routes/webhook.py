@@ -68,6 +68,17 @@ def receive():
                     elif media:
                         caption  = media.get('caption', '')
                         msg_body = caption or f'[{msg_type.capitalize()}]'
+                    elif msg_type == 'unsupported':
+                        # Meta sends type "unsupported" (instead of image/video/etc.)
+                        # for content it won't hand over via the Cloud API at all —
+                        # most commonly "View Once" photos/videos, which WhatsApp
+                        # blocks from ever reaching any Business API for privacy
+                        # reasons. Logging the real reason so it shows up in Railway
+                        # logs and isn't just a mystery "[unsupported]" tag.
+                        errors = msg.get('errors', [])
+                        detail = errors[0].get('title') or errors[0].get('message') if errors else None
+                        print(f'[WEBHOOK] unsupported message details: {errors}')
+                        msg_body = f'[Unsupported: {detail}]' if detail else '[Unsupported message]'
                     else:
                         msg_body = f'[{msg_type}]'
 
