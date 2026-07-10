@@ -152,8 +152,7 @@ body {
 /* ── Page header / topbar ─────────────────────────────────── */
 .page-hdr {
   position: sticky; top: 0; z-index: 50;
-  background: rgba(20,30,55,0.6);
-  backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
+  background: #101c38;
   margin: -32px -32px 28px -32px;
   padding: 0 32px;
   height: 64px;
