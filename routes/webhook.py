@@ -4,9 +4,15 @@ from routes.push import send_push_to_user
 import os
 import json
 import threading
+import requests as http
 
 webhook_bp = Blueprint('webhook', __name__)
 VERIFY_TOKEN = os.getenv('WEBHOOK_VERIFY_TOKEN', 'myverifytoken123')
+META_API = 'https://graph.facebook.com/v22.0'
+
+# Message types that carry downloadable media, keyed to where WhatsApp puts
+# the media id/mime/filename inside the webhook payload for that type.
+MEDIA_TYPES = ('image', 'video', 'audio', 'document', 'sticker')
 
 
 # GET /webhook  — Meta challenge verification
@@ -55,24 +61,31 @@ def receive():
                     wamid      = msg.get('id', '')
                     msg_type   = msg.get('type', 'text')
 
+                    media = msg.get(msg_type) if msg_type in MEDIA_TYPES else None
+
                     if msg_type == 'text':
                         msg_body = msg.get('text', {}).get('body', '')
-                    elif msg_type == 'image':
-                        msg_body = '[Image]'
-                    elif msg_type == 'document':
-                        msg_body = '[Document]'
-                    elif msg_type == 'audio':
-                        msg_body = '[Audio]'
-                    elif msg_type == 'video':
-                        msg_body = '[Video]'
+                    elif media:
+                        caption  = media.get('caption', '')
+                        msg_body = caption or f'[{msg_type.capitalize()}]'
                     else:
                         msg_body = f'[{msg_type}]'
 
                     print(f'[WEBHOOK] incoming from={from_phone} body={msg_body!r} user_id={user_id}')
-                    save_message(
+                    reply_id = save_message(
                         from_phone, msg_body, msg_type, wamid, user_id, direction='in',
                         profile_name=profile_names.get(from_phone)
                     )
+
+                    if reply_id and media and media.get('id'):
+                        # Fetching + downloading media is a couple of network
+                        # round-trips — do it off-thread so the webhook still
+                        # responds to Meta immediately.
+                        threading.Thread(
+                            target=download_and_store_media,
+                            args=(reply_id, media.get('id'), user_id, media.get('mime_type'), media.get('filename')),
+                            daemon=True
+                        ).start()
 
     except Exception as e:
         print(f'[WEBHOOK] error: {e}')
@@ -155,10 +168,11 @@ def resolve_contact_name(cur, user_id, phone, profile_name=None):
 
 def save_message(from_phone, message_body, message_type, wamid, user_id, direction='in',
                   profile_name=None, contact_name=None):
-    """Save an incoming or outgoing WhatsApp message to the replies table."""
+    """Save an incoming or outgoing WhatsApp message to the replies table.
+    Returns the new row's id, or None if it was skipped/a duplicate."""
     if not user_id:
         print(f'[WEBHOOK] save_message skipped: user_id is None (from={from_phone})')
-        return
+        return None
 
     conn = get_conn()
     try:
@@ -169,7 +183,7 @@ def save_message(from_phone, message_body, message_type, wamid, user_id, directi
             cur.execute('SELECT id FROM replies WHERE wamid = %s', (wamid,))
             if cur.fetchone():
                 cur.close()
-                return
+                return None
 
         if direction == 'in':
             cur.execute("""
@@ -192,7 +206,9 @@ def save_message(from_phone, message_body, message_type, wamid, user_id, directi
             INSERT INTO replies
                 (user_id, from_phone, message_body, message_type, template_name, contact_name, wamid, direction, is_read)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
         """, (user_id, from_phone, message_body, message_type, template_name, contact_name, wamid, direction, is_read))
+        reply_id = cur.fetchone()[0]
         conn.commit()
         cur.close()
         print(f'[WEBHOOK] saved {direction} message from={from_phone}')
@@ -204,9 +220,75 @@ def save_message(from_phone, message_body, message_type, wamid, user_id, directi
                 args=(user_id, contact_name or from_phone, message_body),
                 daemon=True
             ).start()
+
+        return reply_id
     except Exception as e:
         conn.rollback()
         print(f'[WEBHOOK] save_message error: {e}')
         import traceback; traceback.print_exc()
+        return None
     finally:
         put_conn(conn)
+
+
+def get_wa_access_token(user_id):
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT access_token FROM whatsapp_connections
+            WHERE status = 'active' AND user_id = %s ORDER BY id DESC LIMIT 1
+        """, (user_id,))
+        row = cur.fetchone()
+        return row[0] if row else None
+    finally:
+        put_conn(conn)
+
+
+def download_and_store_media(reply_id, media_id, user_id, fallback_mime=None, filename=None):
+    """
+    WhatsApp media messages only carry a media id in the webhook payload —
+    the actual file has to be fetched separately from Meta (a lookup call for
+    a short-lived download URL, then the download itself), both requiring the
+    business's access token. Runs in a background thread so the webhook can
+    still ack Meta immediately; failures here just mean the message keeps its
+    '[Image]'-style placeholder text instead of the real media.
+    """
+    access_token = get_wa_access_token(user_id)
+    if not access_token:
+        print(f'[WEBHOOK] media download skipped: no active WhatsApp connection for user_id={user_id}')
+        return
+
+    try:
+        meta_res = http.get(
+            f'{META_API}/{media_id}',
+            headers={'Authorization': f'Bearer {access_token}'},
+            timeout=15
+        )
+        meta_data = meta_res.json()
+        url = meta_data.get('url')
+        mime_type = meta_data.get('mime_type') or fallback_mime
+        if not url:
+            print(f'[WEBHOOK] media lookup failed for media_id={media_id}: {meta_data}')
+            return
+
+        file_res = http.get(url, headers={'Authorization': f'Bearer {access_token}'}, timeout=60)
+        if file_res.status_code != 200:
+            print(f'[WEBHOOK] media download failed for media_id={media_id}: HTTP {file_res.status_code}')
+            return
+
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO reply_media (reply_id, mime_type, filename, data)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (reply_id) DO NOTHING
+            """, (reply_id, mime_type, filename, file_res.content))
+            conn.commit()
+            cur.close()
+            print(f'[WEBHOOK] stored media for reply_id={reply_id} ({mime_type}, {len(file_res.content)} bytes)')
+        finally:
+            put_conn(conn)
+    except Exception as e:
+        print(f'[WEBHOOK] media download error for media_id={media_id}: {e}')

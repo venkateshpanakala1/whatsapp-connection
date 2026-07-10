@@ -151,6 +151,15 @@ def init_db():
                 created_at TIMESTAMP DEFAULT NOW(),
                 UNIQUE(endpoint)
             );
+
+            CREATE TABLE IF NOT EXISTS reply_media (
+                id SERIAL PRIMARY KEY,
+                reply_id INTEGER REFERENCES replies(id) UNIQUE,
+                mime_type VARCHAR(100),
+                filename VARCHAR(255),
+                data BYTEA NOT NULL,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
         """)
         # Defaults existing rows to read so old history doesn't suddenly
         # appear unread; new incoming rows explicitly set FALSE at insert time.
