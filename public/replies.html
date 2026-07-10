@@ -118,8 +118,8 @@
       padding: 2px 7px; border-radius: 8px; font-size: 10.5px;
     }
 
-    .msg-image { max-height: 220px; display: block; cursor: pointer; object-fit: cover; }
-    .msg-video { display: block; }
+    .msg-image { min-height: 120px; max-height: 220px; display: block; cursor: pointer; object-fit: cover; background: #ddd; }
+    .msg-video { min-height: 140px; display: block; background: #000; }
     .msg-audio { display: block; width: 220px; max-width: 60vw; }
 
     .msg-dl-btn { color: inherit; text-decoration: none; }
@@ -459,7 +459,7 @@
              + downloadBtn(mediaUrl, 'image.jpg');
       }
       if (m.message_type === 'video') {
-        return `<video class="msg-video" src="${mediaUrl}" controls></video>`
+        return `<video class="msg-video" src="${mediaUrl}" controls preload="metadata"></video>`
              + downloadBtn(mediaUrl, 'video.mp4');
       }
       if (m.message_type === 'audio') {
@@ -498,6 +498,15 @@
           </div>`;
       }).join('');
       wrap.scrollTop = wrap.scrollHeight;
+
+      // Images/videos load asynchronously — if the newest message is media,
+      // it may finish loading (and take up its real height) after we've
+      // already scrolled, silently pushing it below the fold. Re-scroll
+      // once each one actually loads so the latest message stays visible.
+      wrap.querySelectorAll('img.msg-image, video.msg-video').forEach(el => {
+        const evt = el.tagName === 'VIDEO' ? 'loadedmetadata' : 'load';
+        el.addEventListener(evt, () => { wrap.scrollTop = wrap.scrollHeight; }, { once: true });
+      });
     } catch (e) {}
   }
 
