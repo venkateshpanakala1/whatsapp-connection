@@ -47,6 +47,8 @@ self.addEventListener('push', (event) => {
     body: data.body || '',
     icon: '/icon-192.png',
     badge: '/icon-192.png',
+    silent: false,             // play the OS/browser's default notification sound
+    vibrate: [200, 100, 200],  // mobile: short-pause-short buzz
     data: { url: data.url || '/replies' },
   };
 

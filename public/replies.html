@@ -38,8 +38,8 @@
       padding: 13px 16px; cursor: pointer; border-bottom: 1px solid #f3f4f6;
       transition: background var(--t);
     }
-    .conv-item:hover { background: #f8fffe; }
-    .conv-item.active { background: #f0faf9; }
+    .conv-item:hover { background: rgba(255,255,255,0.06); }
+    .conv-item.active { background: rgba(37,211,102,0.12); }
     .conv-avatar {
       width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0;
       background: linear-gradient(135deg, var(--g-400), var(--g-700));
@@ -100,7 +100,7 @@
 
     .step-dots {
       display: none; justify-content: center; gap: 8px;
-      padding: 10px 16px; background: #fafafa; border-top: 1px solid var(--border);
+      padding: 10px 16px; background: rgba(255,255,255,0.04); border-top: 1px solid var(--border);
     }
     .step-dots.show { display: flex; }
     .step-dot { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-3); }
@@ -150,11 +150,62 @@
 </head>
 <body>
 
+<div class="stars-layer"></div>
+<div class="stars-layer layer-2"></div>
+<div class="shooting-star"></div>
+<div class="shooting-star s2"></div>
+<div class="shooting-star s3"></div>
+<div class="moon"></div>
+<div class="plane">
+  <svg viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg">
+    <path d="M2 12 L40 10 L58 4 L54 10 L40 13 L18 16 L10 14 Z" fill="#e4ebf5"/>
+    <circle class="plane-light plane-light-red"   cx="4"  cy="12" r="1.6" fill="#ff4d4d"/>
+    <circle class="plane-light plane-light-green" cx="56" cy="5"  r="1.6" fill="#4dff9a"/>
+  </svg>
+</div>
+<div class="plane p2">
+  <svg viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg">
+    <path d="M2 12 L40 10 L58 4 L54 10 L40 13 L18 16 L10 14 Z" fill="#e4ebf5"/>
+    <circle class="plane-light plane-light-red"   cx="4"  cy="12" r="1.6" fill="#ff4d4d"/>
+    <circle class="plane-light plane-light-green" cx="56" cy="5"  r="1.6" fill="#4dff9a"/>
+  </svg>
+</div>
+<svg class="skyline" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 220" preserveAspectRatio="xMidYMax slice">
+  <defs>
+    <pattern id="winPattern" width="16" height="20" patternUnits="userSpaceOnUse">
+      <rect width="16" height="20" fill="#0c1730"/>
+      <rect x="3" y="4" width="4" height="5" fill="#ffd580" opacity="0.85"/>
+      <rect x="10" y="10" width="4" height="5" fill="#ffd580" opacity="0.4"/>
+    </pattern>
+  </defs>
+  <rect x="0"    y="120" width="120" height="100" fill="url(#winPattern)"/>
+  <rect x="110"  y="150" width="90"  height="70"  fill="url(#winPattern)"/>
+  <rect x="190"  y="90"  width="70"  height="130" fill="url(#winPattern)"/>
+  <rect x="250"  y="140" width="110" height="80"  fill="url(#winPattern)"/>
+  <rect x="350"  y="60"  width="60"  height="160" fill="url(#winPattern)"/>
+  <rect x="400"  y="130" width="140" height="90"  fill="url(#winPattern)"/>
+  <rect x="530"  y="100" width="80"  height="120" fill="url(#winPattern)"/>
+  <rect x="600"  y="150" width="130" height="70"  fill="url(#winPattern)"/>
+  <rect x="720"  y="80"  width="70"  height="140" fill="url(#winPattern)"/>
+  <rect x="780"  y="140" width="150" height="80"  fill="url(#winPattern)"/>
+  <rect x="920"  y="110" width="90"  height="110" fill="url(#winPattern)"/>
+  <rect x="1000" y="150" width="130" height="70"  fill="url(#winPattern)"/>
+  <rect x="1120" y="70"  width="80"  height="150" fill="url(#winPattern)"/>
+  <rect x="1190" y="130" width="140" height="90"  fill="url(#winPattern)"/>
+  <rect x="1320" y="100" width="100" height="120" fill="url(#winPattern)"/>
+  <rect x="1410" y="145" width="120" height="75"  fill="url(#winPattern)"/>
+  <rect x="1520" y="90"  width="80"  height="130" fill="url(#winPattern)"/>
+  <line x1="385" y1="60" x2="385" y2="34" stroke="#b8c4dd" stroke-width="1.5"/>
+  <circle class="antenna-blink" cx="385" cy="32" r="3" fill="#ff5a5a"/>
+  <line x1="1160" y1="70" x2="1160" y2="42" stroke="#b8c4dd" stroke-width="1.5"/>
+  <circle class="antenna-blink" cx="1160" cy="40" r="3" fill="#ff5a5a"/>
+</svg>
+
 <aside class="sidebar">
   <div class="sidebar-brand">
     <div class="brand-icon">💬</div>
     <div class="brand-text">
-      <div class="app-name">V³</div>
+      <div class="app-name">vQube</div>
       <div class="app-sub">the untold energy</div>
     </div>
   </div>
@@ -472,9 +523,45 @@
     else { btn.disabled = false; btn.textContent = '🔔 Enable Notifications'; }
   }
 
+  // Short beep played in-app whenever a reply arrives while this page is
+  // open — guarantees an audible cue even if the OS suppresses the visual
+  // banner because the tab already has focus. Generated with the Web Audio
+  // API so no sound file needs to be hosted.
+  let audioCtx = null;
+  function ensureAudioCtx() {
+    if (!audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) audioCtx = new Ctx();
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+    return audioCtx;
+  }
+  // Browsers block audio until the user has interacted with the page —
+  // prime the context on the first click/tap anywhere.
+  document.addEventListener('click', ensureAudioCtx, { once: true });
+
+  function playNotifySound() {
+    const ctx = ensureAudioCtx();
+    if (!ctx) return;
+    try {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.3, ctx.currentTime + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.35);
+    } catch (e) {}
+  }
+
   // Push arrived while this page was open — refresh immediately instead of
-  // waiting for the next poll tick.
+  // waiting for the next poll tick, and play a beep so it's noticed even
+  // when the OS notification banner doesn't show for a focused tab.
   window.addEventListener('push-new-reply', () => {
+    playNotifySound();
     loadConversations();
     if (currentPhone) loadConversationMessages(currentPhone);
   });

@@ -1,6 +1,6 @@
 {
-  "name": "V³ WhatsApp SaaS",
-  "short_name": "V³",
+  "name": "vQube",
+  "short_name": "vQube",
   "description": "Manage WhatsApp templates, contacts, bulk sends and replies.",
   "start_url": "/replies",
   "scope": "/",
