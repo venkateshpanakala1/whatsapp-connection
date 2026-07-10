@@ -17,8 +17,8 @@
     /* File chosen bar */
     .file-chosen {
       display: none; align-items: center; gap: 12px;
-      padding: 12px 16px; background: #f0faf9;
-      border: 1px solid #a7f3d0; border-radius: var(--r-sm); margin-top: 14px;
+      padding: 12px 16px; background: rgba(37,211,102,0.1);
+      border: 1px solid rgba(37,211,102,0.3); border-radius: var(--r-sm); margin-top: 14px;
     }
     .file-chosen.show { display: flex; }
     .file-chosen .fname { flex: 1; font-size: 14px; color: var(--text); font-weight: 500; }
@@ -46,9 +46,9 @@
       transition: background var(--t);
     }
     .file-item:last-child { border-bottom: none; }
-    .file-item:hover { background: #f8fffe; border-radius: 8px; }
+    .file-item:hover { background: rgba(255,255,255,0.06); border-radius: 8px; }
     .file-num {
-      width: 26px; height: 26px; background: #f0faf9; color: var(--g-500);
+      width: 26px; height: 26px; background: rgba(37,211,102,0.15); color: #6ee7b7;
       border-radius: 50%; font-size: 11px; font-weight: 700;
       display: flex; align-items: center; justify-content: center; flex-shrink: 0;
     }
@@ -57,11 +57,11 @@
     .file-meta  { font-size: 12px; color: var(--text-3); white-space: nowrap; }
     .btn-file-del {
       background: none; border: none;
-      color: #d1d5db; font-size: 16px; cursor: pointer;
+      color: rgba(255,255,255,0.35); font-size: 16px; cursor: pointer;
       padding: 5px 7px; border-radius: 6px; flex-shrink: 0;
       transition: all var(--t);
     }
-    .btn-file-del:hover { color: #dc2626; background: #fef2f2; }
+    .btn-file-del:hover { color: #f87171; background: rgba(239,68,68,0.12); }
 
     .total-badge {
       background: #d1fae5; color: #065f46;
@@ -73,11 +73,62 @@
 </head>
 <body>
 
+<div class="stars-layer"></div>
+<div class="stars-layer layer-2"></div>
+<div class="shooting-star"></div>
+<div class="shooting-star s2"></div>
+<div class="shooting-star s3"></div>
+<div class="moon"></div>
+<div class="plane">
+  <svg viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg">
+    <path d="M2 12 L40 10 L58 4 L54 10 L40 13 L18 16 L10 14 Z" fill="#e4ebf5"/>
+    <circle class="plane-light plane-light-red"   cx="4"  cy="12" r="1.6" fill="#ff4d4d"/>
+    <circle class="plane-light plane-light-green" cx="56" cy="5"  r="1.6" fill="#4dff9a"/>
+  </svg>
+</div>
+<div class="plane p2">
+  <svg viewBox="0 0 60 20" xmlns="http://www.w3.org/2000/svg">
+    <path d="M2 12 L40 10 L58 4 L54 10 L40 13 L18 16 L10 14 Z" fill="#e4ebf5"/>
+    <circle class="plane-light plane-light-red"   cx="4"  cy="12" r="1.6" fill="#ff4d4d"/>
+    <circle class="plane-light plane-light-green" cx="56" cy="5"  r="1.6" fill="#4dff9a"/>
+  </svg>
+</div>
+<svg class="skyline" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 220" preserveAspectRatio="xMidYMax slice">
+  <defs>
+    <pattern id="winPattern" width="16" height="20" patternUnits="userSpaceOnUse">
+      <rect width="16" height="20" fill="#0c1730"/>
+      <rect x="3" y="4" width="4" height="5" fill="#ffd580" opacity="0.85"/>
+      <rect x="10" y="10" width="4" height="5" fill="#ffd580" opacity="0.4"/>
+    </pattern>
+  </defs>
+  <rect x="0"    y="120" width="120" height="100" fill="url(#winPattern)"/>
+  <rect x="110"  y="150" width="90"  height="70"  fill="url(#winPattern)"/>
+  <rect x="190"  y="90"  width="70"  height="130" fill="url(#winPattern)"/>
+  <rect x="250"  y="140" width="110" height="80"  fill="url(#winPattern)"/>
+  <rect x="350"  y="60"  width="60"  height="160" fill="url(#winPattern)"/>
+  <rect x="400"  y="130" width="140" height="90"  fill="url(#winPattern)"/>
+  <rect x="530"  y="100" width="80"  height="120" fill="url(#winPattern)"/>
+  <rect x="600"  y="150" width="130" height="70"  fill="url(#winPattern)"/>
+  <rect x="720"  y="80"  width="70"  height="140" fill="url(#winPattern)"/>
+  <rect x="780"  y="140" width="150" height="80"  fill="url(#winPattern)"/>
+  <rect x="920"  y="110" width="90"  height="110" fill="url(#winPattern)"/>
+  <rect x="1000" y="150" width="130" height="70"  fill="url(#winPattern)"/>
+  <rect x="1120" y="70"  width="80"  height="150" fill="url(#winPattern)"/>
+  <rect x="1190" y="130" width="140" height="90"  fill="url(#winPattern)"/>
+  <rect x="1320" y="100" width="100" height="120" fill="url(#winPattern)"/>
+  <rect x="1410" y="145" width="120" height="75"  fill="url(#winPattern)"/>
+  <rect x="1520" y="90"  width="80"  height="130" fill="url(#winPattern)"/>
+  <line x1="385" y1="60" x2="385" y2="34" stroke="#b8c4dd" stroke-width="1.5"/>
+  <circle class="antenna-blink" cx="385" cy="32" r="3" fill="#ff5a5a"/>
+  <line x1="1160" y1="70" x2="1160" y2="42" stroke="#b8c4dd" stroke-width="1.5"/>
+  <circle class="antenna-blink" cx="1160" cy="40" r="3" fill="#ff5a5a"/>
+</svg>
+
 <aside class="sidebar">
   <div class="sidebar-brand">
     <div class="brand-icon">💬</div>
     <div class="brand-text">
-      <div class="app-name">V³</div>
+      <div class="app-name">vQube</div>
       <div class="app-sub">the untold energy</div>
     </div>
   </div>

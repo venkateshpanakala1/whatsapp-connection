@@ -50,6 +50,10 @@ def login_page():
         return redirect('/')
     return send_from_directory('public', 'login.html')
 
+@app.route('/forgot-password')
+def forgot_password_page():
+    return send_from_directory('public', 'forgot-password.html')
+
 @app.route('/')
 @login_required
 def index():
