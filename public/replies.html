@@ -462,19 +462,19 @@
     if (m.has_media) {
       if (m.message_type === 'image' || m.message_type === 'sticker') {
         return `<img class="msg-image" src="${mediaUrl}" alt="image" onclick="window.open('${mediaUrl}','_blank')" />`
-             + downloadBtn(mediaUrl, 'image.jpg');
+             + downloadBtn(mediaUrl, `image-${m.id}.jpg`);
       }
       if (m.message_type === 'video') {
         return `<video class="msg-video" src="${mediaUrl}" controls preload="metadata"></video>`
-             + downloadBtn(mediaUrl, 'video.mp4');
+             + downloadBtn(mediaUrl, `video-${m.id}.mp4`);
       }
       if (m.message_type === 'audio') {
         return `<span class="msg-audio-wrap"><audio class="msg-audio" src="${mediaUrl}" controls></audio>`
-             + downloadBtn(mediaUrl, 'audio.ogg', 'msg-dl-inline') + `</span>`;
+             + downloadBtn(mediaUrl, `audio-${m.id}.ogg`, 'msg-dl-inline') + `</span>`;
       }
       if (m.message_type === 'document') {
         return `<span class="msg-doc-wrap"><a class="msg-doc" href="${mediaUrl}" target="_blank">📄 ${esc(m.message_body || 'Open document')}</a>`
-             + downloadBtn(mediaUrl, 'document', 'msg-dl-inline') + `</span>`;
+             + downloadBtn(mediaUrl, `document-${m.id}`, 'msg-dl-inline') + `</span>`;
       }
     }
     const label = m.message_type === 'text' ? m.message_body : (m.message_body || `[${m.message_type}]`);
