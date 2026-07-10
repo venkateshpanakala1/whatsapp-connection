@@ -72,7 +72,8 @@
       position: sticky; top: 0; z-index: 2; flex-shrink: 0;
     }
     .btn-back {
-      display: none; background: none; border: none; font-size: 20px;
+      display: none; align-items: center; justify-content: center;
+      background: none; border: none;
       cursor: pointer; color: var(--text-2); padding: 4px;
     }
     .thread-avatar {
@@ -152,7 +153,7 @@
       .chat-layout { height: calc(100vh - 158px); height: calc(100dvh - 158px); }
       .conv-list { width: 100%; border-right: none; }
       .conv-thread { display: none; }
-      .btn-back { display: block; }
+      .btn-back { display: flex; }
       .chat-layout.thread-open .conv-list { display: none; }
       .chat-layout.thread-open .conv-thread { display: flex; }
 
@@ -243,7 +244,9 @@
       <div class="thread-empty" id="thread-empty">Select a conversation to view messages</div>
       <div class="thread-active" id="thread-active" style="display:none">
         <div class="thread-header">
-          <button class="btn-back" onclick="closeThread()">←</button>
+          <button class="btn-back" onclick="closeThread()">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
           <div class="thread-avatar" id="thread-avatar">?</div>
           <div>
             <div class="thread-name" id="thread-name"></div>
@@ -265,7 +268,9 @@
           <textarea id="reply-textarea" placeholder="Type a message..." rows="1" oninput="autoResize(this)"></textarea>
           <button id="reply-send-btn" onclick="sendReply()" title="Send">➤</button>
         </div>
-        <button class="btn-float-back" onclick="closeThread()" title="Back to conversations">←</button>
+        <button class="btn-float-back" onclick="closeThread()" title="Back to conversations">
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
       </div>
     </div>
   </div>
@@ -349,6 +354,17 @@
     document.getElementById('chat-layout').classList.add('thread-open');
     document.querySelector('.page-hdr').classList.add('hide-on-thread');
     document.body.classList.add('no-scroll');
+
+    // Push a history entry so the phone's back gesture/button closes the
+    // thread first (like WhatsApp) instead of exiting the installed app —
+    // there'd otherwise be no history to "go back" to. Only push once per
+    // thread session (switching contacts while one is already open on
+    // desktop's two-pane layout shouldn't stack up extra back-presses).
+    if (!threadHistoryPushed) {
+      history.pushState({ repliesThread: true }, '', location.href);
+      threadHistoryPushed = true;
+    }
+
     document.getElementById('thread-avatar').textContent = name.charAt(0).toUpperCase();
     document.getElementById('thread-name').textContent    = name;
     document.getElementById('thread-phone').textContent   = phone;
@@ -423,11 +439,32 @@
     } catch (e) {}
   }
 
-  function closeThread() {
+  let threadHistoryPushed = false;
+
+  // Actually tears down the open-thread UI. Called from the popstate
+  // handler below so both the on-screen back buttons and the phone's
+  // system back gesture go through the exact same close path.
+  function closeThreadUI() {
     document.getElementById('chat-layout').classList.remove('thread-open');
     document.querySelector('.page-hdr').classList.remove('hide-on-thread');
     document.body.classList.remove('no-scroll');
+    threadHistoryPushed = false;
   }
+
+  // Bound to the on-screen back buttons. Goes through history.back() so it
+  // consumes the same history entry the system back gesture would — keeps
+  // one back-gesture press meaning "close the thread", not "exit the app".
+  function closeThread() {
+    if (threadHistoryPushed) {
+      history.back();
+    } else {
+      closeThreadUI();
+    }
+  }
+
+  window.addEventListener('popstate', () => {
+    if (threadHistoryPushed) closeThreadUI();
+  });
 
   function autoResize(el) {
     el.style.height = 'auto';
