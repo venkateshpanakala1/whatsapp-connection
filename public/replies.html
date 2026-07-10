@@ -166,9 +166,15 @@
       /* The bottom tab bar (just the Replies icon, in the installed app)
          and .main's padding reserved for it aren't needed once a thread is
          open — freeing that space removes the black gap it left behind
-         under the keyboard. */
+         under the keyboard. Full-bleed the chat pane edge-to-edge too,
+         dropping the card look (rounded corners/border/shadow/margins)
+         that otherwise leaves a border of background showing on all sides. */
       body.no-scroll .sidebar { display: none; }
-      body.no-scroll .main { padding-bottom: 0; }
+      body.no-scroll .main { padding: 0; }
+      body.no-scroll .chat-layout {
+        height: 100vh; height: 100dvh;
+        border-radius: 0; border: none; box-shadow: none;
+      }
 
       .btn-float-back {
         display: none;
