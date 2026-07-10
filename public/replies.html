@@ -100,8 +100,20 @@
     .bubble-sent { background: #d9fdd3; align-self: flex-end; border-top-right-radius: 0; }
     .bubble-time { font-size: 11px; color: #999; text-align: right; margin-top: 4px; }
 
-    .msg-image { width: 190px; max-width: 55vw; max-height: 220px; border-radius: 8px; display: block; cursor: pointer; object-fit: cover; }
-    .msg-video { width: 200px; max-width: 55vw; border-radius: 8px; display: block; }
+    /* Image/video bubbles: no padding around the media, like WhatsApp —
+       the parent's own border-radius + overflow:hidden clips it to shape,
+       and the timestamp overlays the bottom-right corner instead of sitting
+       below in extra padding. */
+    .bubble-media { padding: 0; overflow: hidden; }
+    .bubble-media .msg-image, .bubble-media .msg-video { margin: 0; }
+    .bubble-time-overlay {
+      position: absolute; right: 8px; bottom: 6px; margin-top: 0;
+      background: rgba(0,0,0,0.45); color: #fff;
+      padding: 2px 7px; border-radius: 8px; font-size: 10.5px;
+    }
+
+    .msg-image { width: 190px; max-width: 55vw; max-height: 220px; display: block; cursor: pointer; object-fit: cover; }
+    .msg-video { width: 200px; max-width: 55vw; display: block; }
     .msg-audio { display: block; width: 220px; max-width: 60vw; }
     .msg-doc {
       display: flex; align-items: center; gap: 8px;
@@ -433,6 +445,10 @@
     return esc(label);
   }
 
+  function isVisualMedia(m) {
+    return m.has_media && (m.message_type === 'image' || m.message_type === 'video' || m.message_type === 'sticker');
+  }
+
   async function loadConversationMessages(phone) {
     try {
       const res  = await fetch(`${API}/conversation/${encodeURIComponent(phone)}`);
@@ -440,12 +456,15 @@
       const wrap = document.getElementById('thread-messages');
       wrap.innerHTML = (data.messages || []).map(m => {
         const isOut = m.direction === 'out';
-        const bodyHtml = renderMessageBody(m);
-        const time  = m.received_at ? new Date(m.received_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+        const bodyHtml  = renderMessageBody(m);
+        const time      = m.received_at ? new Date(m.received_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+        const isMedia   = isVisualMedia(m);
+        const bubbleCls = (isOut ? 'bubble-sent' : 'bubble-recv') + (isMedia ? ' bubble-media' : '');
+        const timeCls   = isMedia ? 'bubble-time bubble-time-overlay' : 'bubble-time';
         return `
-          <div class="${isOut ? 'bubble-sent' : 'bubble-recv'}">
+          <div class="${bubbleCls}">
             <div>${bodyHtml}</div>
-            <div class="bubble-time">${time}</div>
+            <div class="${timeCls}">${time}</div>
           </div>`;
       }).join('');
       wrap.scrollTop = wrap.scrollHeight;
