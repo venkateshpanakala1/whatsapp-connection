@@ -24,7 +24,7 @@
 
     /* ── Two-pane chat layout ── */
     .chat-layout {
-      display: flex; height: calc(100vh - 128px);
+      display: flex; height: calc(100vh - 128px); height: calc(100dvh - 128px);
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--r); overflow: hidden; box-shadow: var(--shadow);
     }
@@ -68,7 +68,8 @@
     .thread-active { flex: 1; display: flex; flex-direction: column; min-height: 0; }
     .thread-header {
       display: flex; align-items: center; gap: 12px; padding: 12px 18px;
-      border-bottom: 1px solid var(--border); background: var(--surface);
+      border-bottom: 1px solid var(--border); background: #101c38;
+      position: sticky; top: 0; z-index: 2; flex-shrink: 0;
     }
     .btn-back {
       display: none; background: none; border: none; font-size: 20px;
@@ -148,7 +149,7 @@
     .thread-input button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
 
     @media (max-width: 768px) {
-      .chat-layout { height: calc(100vh - 158px); }
+      .chat-layout { height: calc(100vh - 158px); height: calc(100dvh - 158px); }
       .conv-list { width: 100%; border-right: none; }
       .conv-thread { display: none; }
       .btn-back { display: block; }
