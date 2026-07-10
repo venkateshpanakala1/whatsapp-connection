@@ -100,6 +100,14 @@
     .bubble-sent { background: #d9fdd3; align-self: flex-end; border-top-right-radius: 0; }
     .bubble-time { font-size: 11px; color: #999; text-align: right; margin-top: 4px; }
 
+    .date-divider {
+      align-self: center; margin: 4px 0 10px;
+      background: rgba(255,255,255,0.9); color: #54656f;
+      font-size: 11.5px; font-weight: 600;
+      padding: 5px 12px; border-radius: 8px;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+    }
+
     /* Image/video bubbles: no padding around the media, like WhatsApp — the
        timestamp overlays the bottom-right corner instead of sitting below
        in extra padding. Sizing lives directly on the media element itself
@@ -532,24 +540,51 @@
     return m.has_media && (m.message_type === 'image' || m.message_type === 'video' || m.message_type === 'sticker');
   }
 
+  function isSameDay(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  function dateDividerLabel(dateObj) {
+    const today = new Date();
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+    if (isSameDay(dateObj, today)) return 'Today';
+    if (isSameDay(dateObj, yesterday)) return 'Yesterday';
+    return dateObj.toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
   async function loadConversationMessages(phone) {
     try {
       const res  = await fetch(`${API}/conversation/${encodeURIComponent(phone)}`);
       const data = await res.json();
       const wrap = document.getElementById('thread-messages');
-      wrap.innerHTML = (data.messages || []).map(m => {
+
+      let lastDateKey = null;
+      const parts = [];
+      (data.messages || []).forEach(m => {
+        const dateObj = m.received_at ? new Date(m.received_at) : null;
+
+        // WhatsApp-style centered date pill whenever the calendar day changes.
+        if (dateObj) {
+          const dateKey = dateObj.toDateString();
+          if (dateKey !== lastDateKey) {
+            parts.push(`<div class="date-divider"><span>${esc(dateDividerLabel(dateObj))}</span></div>`);
+            lastDateKey = dateKey;
+          }
+        }
+
         const isOut = m.direction === 'out';
         const bodyHtml  = renderMessageBody(m);
-        const time      = m.received_at ? new Date(m.received_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+        const time      = dateObj ? dateObj.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
         const isMedia   = isVisualMedia(m);
         const bubbleCls = (isOut ? 'bubble-sent' : 'bubble-recv') + (isMedia ? ' bubble-media' : '');
         const timeCls   = isMedia ? 'bubble-time bubble-time-overlay' : 'bubble-time';
-        return `
+        parts.push(`
           <div class="${bubbleCls}">
             <div>${bodyHtml}</div>
             <div class="${timeCls}">${time}</div>
-          </div>`;
-      }).join('');
+          </div>`);
+      });
+      wrap.innerHTML = parts.join('');
       wrap.scrollTop = wrap.scrollHeight;
 
       // Images/videos load asynchronously — if the newest message is media,
