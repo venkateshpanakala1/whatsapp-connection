@@ -163,6 +163,13 @@
       .page-hdr.hide-on-thread { display: none; }
       body.no-scroll { overflow: hidden; }
 
+      /* The bottom tab bar (just the Replies icon, in the installed app)
+         and .main's padding reserved for it aren't needed once a thread is
+         open — freeing that space removes the black gap it left behind
+         under the keyboard. */
+      body.no-scroll .sidebar { display: none; }
+      body.no-scroll .main { padding-bottom: 0; }
+
       .btn-float-back {
         display: none;
         position: absolute; right: 18px; bottom: 92px; z-index: 10;
