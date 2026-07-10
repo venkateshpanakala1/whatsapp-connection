@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 from urllib.parse import urlparse
 
-load_dotenv()
+# load_dotenv()  # Disabled: Railway provides env vars directly; loading .env overrides DATABASE_URL
 
 _database_url = os.getenv('DATABASE_URL', '')
 

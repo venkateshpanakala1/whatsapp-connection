@@ -14,7 +14,7 @@ from routes.replies import replies_bp, resume_pending_counter_replies, backfill_
 from routes.auth import auth_bp
 from routes.push import push_bp
 
-load_dotenv()
+# load_dotenv()  # Disabled: Railway provides env vars directly; loading .env overrides SECRET_KEY and other vars
 
 app = Flask(__name__, static_folder='public', static_url_path='')
 app.secret_key = os.getenv('SECRET_KEY', 'wa-saas-dev-secret-change-in-prod')
