@@ -98,6 +98,14 @@
     .bubble-sent { background: #d9fdd3; align-self: flex-end; border-top-right-radius: 0; }
     .bubble-time { font-size: 11px; color: #999; text-align: right; margin-top: 4px; }
 
+    .msg-image { max-width: 240px; max-height: 320px; border-radius: 8px; display: block; cursor: pointer; object-fit: cover; }
+    .msg-video { max-width: 260px; border-radius: 8px; display: block; }
+    .msg-audio { display: block; max-width: 240px; }
+    .msg-doc {
+      display: flex; align-items: center; gap: 8px;
+      color: #128c7e; font-weight: 600; text-decoration: none;
+    }
+
     .step-dots {
       display: none; justify-content: center; gap: 8px;
       padding: 10px 16px; background: rgba(255,255,255,0.04); border-top: 1px solid var(--border);
@@ -344,6 +352,26 @@
     } catch (e) {}
   }
 
+  function renderMessageBody(m) {
+    const mediaUrl = `${API}/media/${m.id}`;
+    if (m.has_media) {
+      if (m.message_type === 'image' || m.message_type === 'sticker') {
+        return `<img class="msg-image" src="${mediaUrl}" alt="image" onclick="window.open('${mediaUrl}','_blank')" />`;
+      }
+      if (m.message_type === 'video') {
+        return `<video class="msg-video" src="${mediaUrl}" controls></video>`;
+      }
+      if (m.message_type === 'audio') {
+        return `<audio class="msg-audio" src="${mediaUrl}" controls></audio>`;
+      }
+      if (m.message_type === 'document') {
+        return `<a class="msg-doc" href="${mediaUrl}" target="_blank">📄 ${esc(m.message_body || 'Open document')}</a>`;
+      }
+    }
+    const label = m.message_type === 'text' ? m.message_body : (m.message_body || `[${m.message_type}]`);
+    return esc(label);
+  }
+
   async function loadConversationMessages(phone) {
     try {
       const res  = await fetch(`${API}/conversation/${encodeURIComponent(phone)}`);
@@ -351,11 +379,11 @@
       const wrap = document.getElementById('thread-messages');
       wrap.innerHTML = (data.messages || []).map(m => {
         const isOut = m.direction === 'out';
-        const body  = m.message_type === 'text' ? m.message_body : `[${m.message_type}]`;
+        const bodyHtml = renderMessageBody(m);
         const time  = m.received_at ? new Date(m.received_at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
         return `
           <div class="${isOut ? 'bubble-sent' : 'bubble-recv'}">
-            <div>${esc(body)}</div>
+            <div>${bodyHtml}</div>
             <div class="bubble-time">${time}</div>
           </div>`;
       }).join('');

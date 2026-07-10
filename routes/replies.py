@@ -285,9 +285,12 @@ def get_conversation(phone):
         conn.commit()
 
         cur.execute("""
-            SELECT id, message_body, message_type, direction, received_at
-            FROM replies WHERE user_id = %s AND from_phone = %s
-            ORDER BY received_at ASC
+            SELECT r.id, r.message_body, r.message_type, r.direction, r.received_at,
+                   (rm.reply_id IS NOT NULL) AS has_media
+            FROM replies r
+            LEFT JOIN reply_media rm ON rm.reply_id = r.id
+            WHERE r.user_id = %s AND r.from_phone = %s
+            ORDER BY r.received_at ASC
         """, (user_id, phone))
         rows = cur.fetchall()
         cur.close()
@@ -300,12 +303,46 @@ def get_conversation(phone):
                     'message_type': r[2],
                     'direction':    r[3],
                     'received_at':  r[4].isoformat() if r[4] else '',
+                    'has_media':    r[5],
                 }
                 for r in rows
             ]
         })
     except Exception as e:
         conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        put_conn(conn)
+
+
+# GET /api/replies/media/<reply_id>  — serves the downloaded WhatsApp media
+# (image/video/audio/document) for one message. Scoped to the logged-in
+# user's own replies so one account can't fetch another's media by guessing ids.
+@replies_bp.route('/media/<int:reply_id>', methods=['GET'])
+def reply_media(reply_id):
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT rm.data, rm.mime_type, rm.filename
+            FROM reply_media rm
+            JOIN replies r ON r.id = rm.reply_id
+            WHERE rm.reply_id = %s AND r.user_id = %s
+        """, (reply_id, user_id))
+        row = cur.fetchone()
+        cur.close()
+        if not row:
+            return jsonify({'error': 'Not found'}), 404
+        data, mime_type, filename = row
+        response = Response(bytes(data), mimetype=mime_type or 'application/octet-stream')
+        if filename:
+            response.headers['Content-Disposition'] = f'inline; filename="{filename}"'
+        return response
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
         put_conn(conn)
