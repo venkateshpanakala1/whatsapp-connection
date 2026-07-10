@@ -156,6 +156,15 @@
       .chat-layout.thread-open .conv-list { display: none; }
       .chat-layout.thread-open .conv-thread { display: flex; }
     }
+
+    /* Installed app (Add to Home Screen) is Replies-only, so this only ever
+       applies here: when the header wraps to two lines on a phone, the
+       email-chip + Sign Out row has just one flex item on its line, and
+       `justify-content: space-between` has nothing to space against — it
+       sits at the left instead of the right. Push it to the right explicitly. */
+    @media (display-mode: standalone) {
+      .ph-user { margin-left: auto; }
+    }
   </style>
 </head>
 <body>
