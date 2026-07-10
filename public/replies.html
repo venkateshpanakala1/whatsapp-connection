@@ -161,9 +161,11 @@
        applies here: when the header wraps to two lines on a phone, the
        email-chip + Sign Out row has just one flex item on its line, and
        `justify-content: space-between` has nothing to space against — it
-       sits at the left instead of the right. Push it to the right explicitly. */
+       sits at the left instead of spanning the row. Make the row itself
+       full-width and space its two children apart: email chip on the left,
+       Sign Out on the right. */
     @media (display-mode: standalone) {
-      .ph-user { margin-left: auto; }
+      .ph-user { width: 100%; justify-content: space-between; }
     }
   </style>
 </head>
