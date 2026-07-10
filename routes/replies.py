@@ -257,7 +257,11 @@ def list_conversations():
                     'message_body':  r[2],
                     'message_type':  r[3],
                     'direction':     r[4],
-                    'received_at':   r[5].isoformat() if r[5] else '',
+                    # received_at is a naive TIMESTAMP written by Postgres's NOW(),
+                    # which is UTC — mark it explicitly with 'Z' so the browser's
+                    # Date parser converts to the viewer's local time instead of
+                    # misreading the naive string as if it were already local.
+                    'received_at':   (r[5].isoformat() + 'Z') if r[5] else '',
                     'unread_count':  r[6],
                 }
                 for r in rows
@@ -302,7 +306,9 @@ def get_conversation(phone):
                     'message_body': r[1],
                     'message_type': r[2],
                     'direction':    r[3],
-                    'received_at':  r[4].isoformat() if r[4] else '',
+                    # See note in list_conversations() — naive TIMESTAMP is UTC,
+                    # mark it so the browser converts to local time correctly.
+                    'received_at':  (r[4].isoformat() + 'Z') if r[4] else '',
                     'has_media':    r[5],
                 }
                 for r in rows

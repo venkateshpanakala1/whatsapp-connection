@@ -44,7 +44,10 @@ def status():
         data = dict(zip(keys, row))
         for k in ['verified_at', 'created_at']:
             if data[k]:
-                data[k] = data[k].isoformat()
+                # Naive TIMESTAMP columns are written in UTC (Postgres's NOW()) —
+                # mark it so the browser converts to local time instead of
+                # misreading the naive string as if it were already local.
+                data[k] = data[k].isoformat() + 'Z'
         return jsonify({'connected': True, 'data': data})
     except Exception as e:
         return jsonify({'error': str(e)}), 500

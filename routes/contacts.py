@@ -141,7 +141,9 @@ def list_files():
         rows = cur.fetchall()
         cur.close()
         files = [
-            {'file': r[0], 'count': r[1], 'imported_at': r[2].isoformat() if r[2] else ''}
+            # Naive TIMESTAMP columns are written in UTC (Postgres's NOW()) —
+            # mark it so the browser converts to local time/date correctly.
+            {'file': r[0], 'count': r[1], 'imported_at': (r[2].isoformat() + 'Z') if r[2] else ''}
             for r in rows
         ]
         return jsonify({'success': True, 'files': files})
@@ -183,7 +185,8 @@ def list_contacts():
         rows = cur.fetchall()
         cur.close()
         contacts = [
-            {'id': r[0], 'name': r[1] or '', 'phone': r[2], 'created_at': r[3].isoformat() if r[3] else ''}
+            # See note above — naive TIMESTAMP is UTC, mark it explicitly.
+            {'id': r[0], 'name': r[1] or '', 'phone': r[2], 'created_at': (r[3].isoformat() + 'Z') if r[3] else ''}
             for r in rows
         ]
         return jsonify({'success': True, 'contacts': contacts, 'count': len(contacts)})
