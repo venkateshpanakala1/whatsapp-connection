@@ -141,6 +141,17 @@
       width: 24px; height: 24px; border-radius: 50%; flex-shrink: 0;
       background: rgba(18,140,126,0.12); color: var(--g-500);
     }
+    .app-toast {
+      position: fixed; left: 50%; bottom: 90px; z-index: 999;
+      transform: translateX(-50%) translateY(16px);
+      background: rgba(20,20,20,0.92); color: #fff;
+      padding: 10px 18px; border-radius: 20px; font-size: 13px;
+      max-width: 80vw; text-align: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.25s ease, transform 0.25s ease;
+    }
+    .app-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
     .msg-doc {
       display: flex; align-items: center; gap: 8px;
       color: #128c7e; font-weight: 600; text-decoration: none;
@@ -453,8 +464,44 @@
 
   const DL_ICON = `<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>`;
 
-  function downloadBtn(mediaUrl, filename, extraClass) {
-    return `<a class="msg-dl-btn${extraClass ? ' ' + extraClass : ''}" href="${mediaUrl}" download="${filename}" title="Download" onclick="event.stopPropagation()">${DL_ICON}</a>`;
+  function showToast(msg) {
+    let toast = document.getElementById('app-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'app-toast';
+      toast.className = 'app-toast';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toast._hideTimer);
+    toast._hideTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+  }
+
+  // Fetches the file ourselves (rather than relying on the <a download>
+  // attribute) so we actually know when the save has completed and can show
+  // a confirmation — a plain download link fires-and-forgets with no signal.
+  async function downloadMedia(url, filename, label) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error('bad response');
+      const blob    = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+      showToast(`✓ ${label} downloaded`);
+    } catch (e) {
+      showToast(`Couldn't download ${label.toLowerCase()}`);
+    }
+  }
+
+  function downloadBtn(mediaUrl, filename, label, extraClass) {
+    return `<a class="msg-dl-btn${extraClass ? ' ' + extraClass : ''}" href="javascript:void(0)" title="Download" onclick="event.stopPropagation(); downloadMedia('${mediaUrl}', '${filename}', '${label}')">${DL_ICON}</a>`;
   }
 
   function renderMessageBody(m) {
@@ -462,19 +509,19 @@
     if (m.has_media) {
       if (m.message_type === 'image' || m.message_type === 'sticker') {
         return `<img class="msg-image" src="${mediaUrl}" alt="image" onclick="window.open('${mediaUrl}','_blank')" />`
-             + downloadBtn(mediaUrl, `image-${m.id}.jpg`);
+             + downloadBtn(mediaUrl, `image-${m.id}.jpg`, 'Image');
       }
       if (m.message_type === 'video') {
         return `<video class="msg-video" src="${mediaUrl}" controls preload="metadata"></video>`
-             + downloadBtn(mediaUrl, `video-${m.id}.mp4`);
+             + downloadBtn(mediaUrl, `video-${m.id}.mp4`, 'Video');
       }
       if (m.message_type === 'audio') {
         return `<span class="msg-audio-wrap"><audio class="msg-audio" src="${mediaUrl}" controls></audio>`
-             + downloadBtn(mediaUrl, `audio-${m.id}.ogg`, 'msg-dl-inline') + `</span>`;
+             + downloadBtn(mediaUrl, `audio-${m.id}.ogg`, 'Audio', 'msg-dl-inline') + `</span>`;
       }
       if (m.message_type === 'document') {
         return `<span class="msg-doc-wrap"><a class="msg-doc" href="${mediaUrl}" target="_blank">📄 ${esc(m.message_body || 'Open document')}</a>`
-             + downloadBtn(mediaUrl, `document-${m.id}`, 'msg-dl-inline') + `</span>`;
+             + downloadBtn(mediaUrl, `document-${m.id}`, 'Document', 'msg-dl-inline') + `</span>`;
       }
     }
     const label = m.message_type === 'text' ? m.message_body : (m.message_body || `[${m.message_type}]`);
