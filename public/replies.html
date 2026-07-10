@@ -155,6 +155,23 @@
       .btn-back { display: block; }
       .chat-layout.thread-open .conv-list { display: none; }
       .chat-layout.thread-open .conv-thread { display: flex; }
+
+      /* Full-screen chat like WhatsApp: hide the app-level header (title,
+         email, Sign Out) while a conversation is open — only the thread's
+         own header (avatar/name/back arrow) stays visible. */
+      .page-hdr.hide-on-thread { display: none; }
+      body.no-scroll { overflow: hidden; }
+
+      .btn-float-back {
+        display: none;
+        position: fixed; right: 18px; bottom: 92px; z-index: 10;
+        width: 48px; height: 48px; border-radius: 50%;
+        background: var(--g-500); color: #fff; border: none;
+        font-size: 20px; line-height: 1; cursor: pointer;
+        align-items: center; justify-content: center;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.45);
+      }
+      .chat-layout.thread-open .btn-float-back { display: flex; }
     }
 
     /* Installed app (Add to Home Screen) is Replies-only, so this only ever
@@ -248,6 +265,7 @@
           <textarea id="reply-textarea" placeholder="Type a message..." rows="1" oninput="autoResize(this)"></textarea>
           <button id="reply-send-btn" onclick="sendReply()" title="Send">➤</button>
         </div>
+        <button class="btn-float-back" onclick="closeThread()" title="Back to conversations">←</button>
       </div>
     </div>
   </div>
@@ -329,6 +347,8 @@
     document.getElementById('thread-empty').style.display = 'none';
     document.getElementById('thread-active').style.display = 'flex';
     document.getElementById('chat-layout').classList.add('thread-open');
+    document.querySelector('.page-hdr').classList.add('hide-on-thread');
+    document.body.classList.add('no-scroll');
     document.getElementById('thread-avatar').textContent = name.charAt(0).toUpperCase();
     document.getElementById('thread-name').textContent    = name;
     document.getElementById('thread-phone').textContent   = phone;
@@ -405,6 +425,8 @@
 
   function closeThread() {
     document.getElementById('chat-layout').classList.remove('thread-open');
+    document.querySelector('.page-hdr').classList.remove('hide-on-thread');
+    document.body.classList.remove('no-scroll');
   }
 
   function autoResize(el) {
