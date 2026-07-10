@@ -100,26 +100,32 @@
     .bubble-sent { background: #d9fdd3; align-self: flex-end; border-top-right-radius: 0; }
     .bubble-time { font-size: 11px; color: #999; text-align: right; margin-top: 4px; }
 
-    /* Image/video bubbles: no padding around the media, like WhatsApp —
-       the parent's own border-radius + overflow:hidden clips it to shape,
-       and the timestamp overlays the bottom-right corner instead of sitting
-       below in extra padding. The *bubble* owns the intended size (capped
-       by the same 65%-of-container max-width every other bubble uses); the
-       media itself is always width:100% of that, so it scales down with
-       the bubble on narrow screens instead of overflowing past it. */
-    .bubble-media {
-      padding: 0; overflow: hidden;
-      width: 210px; max-width: min(55vw, 65%);
+    /* Image/video bubbles: no padding around the media, like WhatsApp — the
+       timestamp overlays the bottom-right corner instead of sitting below
+       in extra padding. Sizing lives directly on the media element itself
+       (not the bubble/overflow-clipping trick, which caused the media to
+       disappear entirely) — same known-working approach as a plain image,
+       just with the bubble's own padding removed and matching rounded
+       corners drawn straight onto the media so it still looks seamless. */
+    .bubble-media { padding: 0; }
+    .bubble-media .msg-image, .bubble-media .msg-video { margin: 0; }
+    .bubble-recv.bubble-media .msg-image, .bubble-recv.bubble-media .msg-video {
+      border-radius: 10px 10px 10px 0;
     }
-    .bubble-media .msg-image, .bubble-media .msg-video { margin: 0; width: 100%; max-width: none; }
+    .bubble-sent.bubble-media .msg-image, .bubble-sent.bubble-media .msg-video {
+      border-radius: 10px 10px 0 10px;
+    }
     .bubble-time-overlay {
       position: absolute; right: 8px; bottom: 6px; margin-top: 0;
       background: rgba(0,0,0,0.45); color: #fff;
       padding: 2px 7px; border-radius: 8px; font-size: 10.5px;
     }
 
-    .msg-image { min-height: 120px; max-height: 220px; display: block; cursor: pointer; object-fit: cover; background: #ddd; }
-    .msg-video { min-height: 140px; display: block; background: #000; }
+    .msg-image {
+      width: 200px; max-width: 58vw; min-height: 120px; max-height: 220px;
+      display: block; cursor: pointer; object-fit: cover; background: #ddd;
+    }
+    .msg-video { width: 210px; max-width: 58vw; min-height: 140px; display: block; background: #000; }
     .msg-audio { display: block; width: 220px; max-width: 60vw; }
 
     .msg-dl-btn { color: inherit; text-decoration: none; }
