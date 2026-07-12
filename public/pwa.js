@@ -15,7 +15,7 @@ function isStandalone() {
 // before the rest of the page parses, so a restricted screen never actually
 // renders when opened from the home-screen icon.
 (function restrictInstalledAppToReplies() {
-  const RESTRICTED_PATHS = ['/', '/templates', '/contacts', '/send'];
+  const RESTRICTED_PATHS = ['/', '/templates', '/contacts', '/send', '/history'];
   if (isStandalone() && RESTRICTED_PATHS.includes(window.location.pathname)) {
     window.location.replace('/replies');
   }

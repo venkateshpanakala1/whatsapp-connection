@@ -74,6 +74,11 @@ def contacts():
 def send_page():
     return send_from_directory('public', 'send.html')
 
+@app.route('/history')
+@login_required
+def history_page():
+    return send_from_directory('public', 'history.html')
+
 @app.route('/replies')
 @login_required
 def replies_page():
