@@ -115,6 +115,22 @@
         </div>
       </div>
 
+      <div class="hint" style="margin:12px 0 4px">Engagement (from WhatsApp's delivery &amp; read receipts)</div>
+      <div class="stat-grid" style="margin-bottom:6px">
+        <div class="stat-card" style="border-color:rgba(96,165,250,0.4)">
+          <div class="stat-num" id="an-delivered" style="color:#60a5fa">0</div>
+          <div class="stat-lbl">Delivered</div>
+        </div>
+        <div class="stat-card" style="border-color:rgba(167,139,250,0.4)">
+          <div class="stat-num" id="an-read" style="color:#a78bfa">0</div>
+          <div class="stat-lbl">Read</div>
+        </div>
+        <div class="stat-card" style="border-color:rgba(52,211,153,0.4)">
+          <div class="stat-num" id="an-replied" style="color:#34d399">0</div>
+          <div class="stat-lbl">Replied</div>
+        </div>
+      </div>
+
       <div class="row-2" style="margin-top:18px">
         <div>
           <label>Status</label>
@@ -219,6 +235,9 @@
     document.getElementById('an-total').textContent    = j.total;
     document.getElementById('an-sent').textContent     = j.sent;
     document.getElementById('an-failed').textContent   = j.failed;
+    document.getElementById('an-delivered').textContent = j.delivered_count ?? 0;
+    document.getElementById('an-read').textContent      = j.read_count ?? 0;
+    document.getElementById('an-replied').textContent   = j.replied_count ?? 0;
     document.getElementById('an-rate').textContent      = `${pct}%`;
     document.getElementById('an-rate-bar').style.width  = `${pct}%`;
     document.getElementById('an-delay').textContent    = j.delay != null ? `${j.delay}s` : '—';

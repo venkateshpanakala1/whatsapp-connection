@@ -43,14 +43,14 @@ def get_contacts_by_file(source_file, user_id):
         put_conn(conn)
 
 
-def log_send(job_id, phone, name, template_name, status, user_id):
+def log_send(job_id, phone, name, template_name, status, user_id, wamid=None):
     try:
         conn = get_conn()
         cur  = conn.cursor()
         cur.execute("""
-            INSERT INTO send_logs (user_id, job_id, phone, name, template_name, status)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (user_id, job_id, phone, name or '', template_name, status))
+            INSERT INTO send_logs (user_id, job_id, phone, name, template_name, status, wamid)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (user_id, job_id, phone, name or '', template_name, status, wamid))
         conn.commit()
         cur.close()
     except Exception:
@@ -210,7 +210,8 @@ def send_worker(job_id, contacts, template_name, template_lang, creds, delay, us
                 log_send(job_id, phone, name, template_name, 'failed', user_id)
             else:
                 bump_job_progress(job_id, True)
-                log_send(job_id, phone, name, template_name, 'sent', user_id)
+                wamid = (data.get('messages') or [{}])[0].get('id', '')
+                log_send(job_id, phone, name, template_name, 'sent', user_id, wamid)
         except Exception:
             bump_job_progress(job_id, False, f"{phone}: request failed")
             log_send(job_id, phone, name, template_name, 'failed', user_id)
@@ -330,7 +331,8 @@ def job_status(job_id):
     return jsonify({'found': True, **job})
 
 
-# GET /api/send/history  — recent past bulk-send runs for this user
+# GET /api/send/history  — recent past bulk-send runs for this user, with
+# delivered/read/replied engagement counts alongside the raw sent/failed ones.
 @send_bp.route('/history', methods=['GET'])
 def send_history():
     user_id = session.get('user_id')
@@ -338,28 +340,44 @@ def send_history():
     try:
         cur = conn.cursor()
         cur.execute("""
-            SELECT id, source_file, template_name, status, total, sent, failed,
-                   created_at, updated_at, delay, errors
-            FROM send_jobs WHERE user_id = %s
-            ORDER BY created_at DESC LIMIT 20
+            SELECT
+                sj.id, sj.source_file, sj.template_name, sj.status, sj.total,
+                sj.sent, sj.failed, sj.created_at, sj.updated_at, sj.delay, sj.errors,
+                COUNT(sl.id) FILTER (WHERE sl.delivered_at IS NOT NULL)      AS delivered_count,
+                COUNT(sl.id) FILTER (WHERE sl.read_at IS NOT NULL)          AS read_count,
+                COUNT(DISTINCT sl.phone) FILTER (WHERE EXISTS (
+                    SELECT 1 FROM replies r
+                    WHERE r.user_id = sj.user_id AND r.direction = 'in'
+                      AND RIGHT(regexp_replace(r.from_phone, '\\D', '', 'g'), 10)
+                        = RIGHT(regexp_replace(sl.phone, '\\D', '', 'g'), 10)
+                      AND r.received_at > sl.sent_at
+                ))                                                          AS replied_count
+            FROM send_jobs sj
+            LEFT JOIN send_logs sl ON sl.job_id = sj.id AND sl.status = 'sent'
+            WHERE sj.user_id = %s
+            GROUP BY sj.id
+            ORDER BY sj.created_at DESC LIMIT 20
         """, (user_id,))
         rows = cur.fetchall()
         cur.close()
         jobs = [
             {
-                'id':            r[0],
-                'source_file':   r[1],
-                'template_name': r[2],
-                'status':        r[3],
-                'total':         r[4],
-                'sent':          r[5],
-                'failed':        r[6],
+                'id':              r[0],
+                'source_file':     r[1],
+                'template_name':   r[2],
+                'status':          r[3],
+                'total':           r[4],
+                'sent':            r[5],
+                'failed':          r[6],
                 # Naive TIMESTAMP is UTC (Postgres's NOW()) — mark it so the
                 # browser converts to local time instead of misreading it.
-                'created_at':    (r[7].isoformat() + 'Z') if r[7] else '',
-                'updated_at':    (r[8].isoformat() + 'Z') if r[8] else '',
-                'delay':         r[9],
-                'errors':        r[10] or [],
+                'created_at':      (r[7].isoformat() + 'Z') if r[7] else '',
+                'updated_at':      (r[8].isoformat() + 'Z') if r[8] else '',
+                'delay':           r[9],
+                'errors':          r[10] or [],
+                'delivered_count': r[11],
+                'read_count':      r[12],
+                'replied_count':   r[13],
             }
             for r in rows
         ]
