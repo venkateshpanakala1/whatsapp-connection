@@ -233,6 +233,74 @@
   </div>
 </div>
 
+<!-- Analytics Modal -->
+<div class="modal-overlay" id="analytics-modal" onclick="closeAnalyticsOnBg(event)">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span class="modal-title">Send Analytics</span>
+      <button class="modal-close" onclick="closeAnalytics()">✕</button>
+    </div>
+    <div style="padding:20px 24px">
+      <div class="row-2" style="margin-bottom:16px">
+        <div>
+          <label>File</label>
+          <div id="an-file" style="font-size:14px;font-weight:600;color:var(--text)"></div>
+        </div>
+        <div>
+          <label>Template</label>
+          <div id="an-template" style="font-size:14px;font-weight:600;color:var(--text)"></div>
+        </div>
+      </div>
+
+      <div class="prog-stats">
+        <span>Success rate</span>
+        <span id="an-rate" style="font-weight:700;color:var(--text)"></span>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-bar" id="an-rate-bar" style="width:0%"></div>
+      </div>
+
+      <div class="stat-grid" style="margin-top:20px;margin-bottom:6px">
+        <div class="stat-card s-total">
+          <div class="stat-num" id="an-total">0</div>
+          <div class="stat-lbl">Total</div>
+        </div>
+        <div class="stat-card s-sent">
+          <div class="stat-num" id="an-sent">0</div>
+          <div class="stat-lbl">Sent</div>
+        </div>
+        <div class="stat-card s-failed">
+          <div class="stat-num" id="an-failed">0</div>
+          <div class="stat-lbl">Failed</div>
+        </div>
+      </div>
+
+      <div class="row-2" style="margin-top:18px">
+        <div>
+          <label>Status</label>
+          <div id="an-status" style="margin-top:4px"></div>
+        </div>
+        <div>
+          <label>Delay used</label>
+          <div id="an-delay" style="font-size:14px;font-weight:600;color:var(--text)"></div>
+        </div>
+      </div>
+      <div class="row-2" style="margin-top:14px">
+        <div>
+          <label>Started</label>
+          <div id="an-started" style="font-size:14px;font-weight:600;color:var(--text)"></div>
+        </div>
+        <div>
+          <label>Duration</label>
+          <div id="an-duration" style="font-size:14px;font-weight:600;color:var(--text)"></div>
+        </div>
+      </div>
+
+      <div class="error-list" id="an-errors" style="display:none;margin-top:18px"></div>
+    </div>
+  </div>
+</div>
+
 <script>
   const API = '/api/send';
   let filesData     = [];
@@ -523,20 +591,22 @@
     return 'badge-gray';
   }
 
+  let historyJobs = [];
+
   async function loadHistory() {
     const el = document.getElementById('history-list');
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>';
     try {
       const res  = await fetch(`${API}/history`);
       const data = await res.json();
-      const jobs = data.jobs || [];
-      if (!jobs.length) {
+      historyJobs = data.jobs || [];
+      if (!historyJobs.length) {
         el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No sends yet.</div><div class="empty-sub">Your bulk send history will appear here.</div></div>';
         return;
       }
       el.innerHTML = `<div class="table-wrap"><table>
-        <thead><tr><th>File</th><th>Template</th><th>Sent</th><th>Failed</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
-        <tbody>${jobs.map(j => `
+        <thead><tr><th>File</th><th>Template</th><th>Sent</th><th>Failed</th><th>Total</th><th>Status</th><th>Date</th><th></th></tr></thead>
+        <tbody>${historyJobs.map((j, i) => `
           <tr>
             <td>${esc(j.source_file || '—')}</td>
             <td>${esc(j.template_name || '—')}</td>
@@ -545,6 +615,7 @@
             <td>${j.total}</td>
             <td><span class="badge ${statusBadgeClass(j.status)}">${esc(j.status)}</span></td>
             <td>${j.created_at ? new Date(j.created_at).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : ''}</td>
+            <td><button class="btn btn-outline btn-sm" onclick="showJobAnalytics(${i})">📊 Analytics</button></td>
           </tr>`).join('')}
         </tbody>
       </table></div>`;
@@ -552,6 +623,44 @@
       el.innerHTML = `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
     }
   }
+
+  function showJobAnalytics(index) {
+    const j = historyJobs[index];
+    if (!j) return;
+
+    const pct = j.total ? Math.round((j.sent / j.total) * 100) : 0;
+    const started  = j.created_at ? new Date(j.created_at) : null;
+    const finished = j.updated_at ? new Date(j.updated_at) : null;
+    const durationMs = (started && finished) ? (finished - started) : null;
+    const durationStr = durationMs != null
+      ? (durationMs < 60000 ? `${Math.round(durationMs / 1000)}s` : `${Math.round(durationMs / 60000)}m`)
+      : '—';
+
+    document.getElementById('an-file').textContent     = j.source_file || '—';
+    document.getElementById('an-template').textContent = j.template_name || '—';
+    document.getElementById('an-status').innerHTML     = `<span class="badge ${statusBadgeClass(j.status)}">${esc(j.status)}</span>`;
+    document.getElementById('an-total').textContent    = j.total;
+    document.getElementById('an-sent').textContent     = j.sent;
+    document.getElementById('an-failed').textContent   = j.failed;
+    document.getElementById('an-rate').textContent      = `${pct}%`;
+    document.getElementById('an-rate-bar').style.width  = `${pct}%`;
+    document.getElementById('an-delay').textContent    = j.delay != null ? `${j.delay}s` : '—';
+    document.getElementById('an-duration').textContent = durationStr;
+    document.getElementById('an-started').textContent  = started ? started.toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : '—';
+
+    const errEl = document.getElementById('an-errors');
+    if (j.errors && j.errors.length) {
+      errEl.innerHTML = `<strong>Errors (up to 10 shown):</strong>` + j.errors.map(e => `<p>${esc(e)}</p>`).join('');
+      errEl.style.display = 'block';
+    } else {
+      errEl.style.display = 'none';
+    }
+
+    document.getElementById('analytics-modal').classList.add('open');
+  }
+
+  function closeAnalytics() { document.getElementById('analytics-modal').classList.remove('open'); }
+  function closeAnalyticsOnBg(e) { if (e.target === document.getElementById('analytics-modal')) closeAnalytics(); }
 
   async function pauseJob() {
     if (!activeJobId) return;

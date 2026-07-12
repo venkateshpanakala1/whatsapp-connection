@@ -338,7 +338,8 @@ def send_history():
     try:
         cur = conn.cursor()
         cur.execute("""
-            SELECT id, source_file, template_name, status, total, sent, failed, created_at
+            SELECT id, source_file, template_name, status, total, sent, failed,
+                   created_at, updated_at, delay, errors
             FROM send_jobs WHERE user_id = %s
             ORDER BY created_at DESC LIMIT 20
         """, (user_id,))
@@ -356,6 +357,9 @@ def send_history():
                 # Naive TIMESTAMP is UTC (Postgres's NOW()) — mark it so the
                 # browser converts to local time instead of misreading it.
                 'created_at':    (r[7].isoformat() + 'Z') if r[7] else '',
+                'updated_at':    (r[8].isoformat() + 'Z') if r[8] else '',
+                'delay':         r[9],
+                'errors':        r[10] or [],
             }
             for r in rows
         ]
