@@ -330,6 +330,42 @@ def job_status(job_id):
     return jsonify({'found': True, **job})
 
 
+# GET /api/send/history  — recent past bulk-send runs for this user
+@send_bp.route('/history', methods=['GET'])
+def send_history():
+    user_id = session.get('user_id')
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, source_file, template_name, status, total, sent, failed, created_at
+            FROM send_jobs WHERE user_id = %s
+            ORDER BY created_at DESC LIMIT 20
+        """, (user_id,))
+        rows = cur.fetchall()
+        cur.close()
+        jobs = [
+            {
+                'id':            r[0],
+                'source_file':   r[1],
+                'template_name': r[2],
+                'status':        r[3],
+                'total':         r[4],
+                'sent':          r[5],
+                'failed':        r[6],
+                # Naive TIMESTAMP is UTC (Postgres's NOW()) — mark it so the
+                # browser converts to local time instead of misreading it.
+                'created_at':    (r[7].isoformat() + 'Z') if r[7] else '',
+            }
+            for r in rows
+        ]
+        return jsonify({'success': True, 'jobs': jobs})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        put_conn(conn)
+
+
 # GET /api/send/progress/<job_id>  — SSE stream
 @send_bp.route('/progress/<job_id>')
 def progress(job_id):

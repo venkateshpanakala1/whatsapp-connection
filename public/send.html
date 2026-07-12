@@ -222,6 +222,15 @@
     <div class="done-banner" id="done-banner"></div>
     <div class="error-list"  id="error-list"></div>
   </div>
+
+  <!-- History of past runs -->
+  <div class="card card-mid" id="history-section">
+    <div class="card-hdr">
+      <div class="card-title">Recent Sends</div>
+      <button class="btn btn-outline btn-sm" onclick="loadHistory()">↻ Refresh</button>
+    </div>
+    <div id="history-list"><div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div></div>
+  </div>
 </div>
 
 <script>
@@ -502,6 +511,44 @@
     localStorage.removeItem('wa_job_id');
     activeJobId = null;
     resetBtn();
+    loadHistory();
+  }
+
+  function statusBadgeClass(status) {
+    if (status === 'done')    return 'badge-green';
+    if (status === 'running') return 'badge-blue';
+    if (status === 'paused')  return 'badge-yellow';
+    return 'badge-gray';
+  }
+
+  async function loadHistory() {
+    const el = document.getElementById('history-list');
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>';
+    try {
+      const res  = await fetch(`${API}/history`);
+      const data = await res.json();
+      const jobs = data.jobs || [];
+      if (!jobs.length) {
+        el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No sends yet.</div><div class="empty-sub">Your bulk send history will appear here.</div></div>';
+        return;
+      }
+      el.innerHTML = `<div class="table-wrap"><table>
+        <thead><tr><th>File</th><th>Template</th><th>Sent</th><th>Failed</th><th>Total</th><th>Status</th><th>Date</th></tr></thead>
+        <tbody>${jobs.map(j => `
+          <tr>
+            <td>${esc(j.source_file || '—')}</td>
+            <td>${esc(j.template_name || '—')}</td>
+            <td>${j.sent}</td>
+            <td>${j.failed}</td>
+            <td>${j.total}</td>
+            <td><span class="badge ${statusBadgeClass(j.status)}">${esc(j.status)}</span></td>
+            <td>${j.created_at ? new Date(j.created_at).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : ''}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`;
+    } catch (e) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+    }
   }
 
   async function pauseJob() {
@@ -552,6 +599,7 @@
   loadSidebarStatus();
   loadFiles();
   loadTemplates();
+  loadHistory();
   tryReconnect();
 
   async function loadSidebarUser() {
