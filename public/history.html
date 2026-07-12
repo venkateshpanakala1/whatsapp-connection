@@ -229,17 +229,13 @@
     }
   }
 
-  // Funnel stages (Sent → Delivered → Read) use one hue stepped light→dark;
-  // Replied is a distinct outcome (an action taken by the recipient, not a
-  // delivery-pipeline stage) so it gets its own accent hue. Both validated
-  // with the dataviz skill's palette checker against this page's actual
-  // dark modal surface (#121c34) — ordinal lightness-monotone check for the
-  // ramp, contrast + chroma-floor for the accent.
+  // Funnel stages (Sent → Delivered → Read) use one hue stepped light→dark,
+  // validated with the dataviz skill's palette checker against this page's
+  // actual dark modal surface (#121c34) — ordinal lightness-monotone check.
   const FUNNEL_ROWS = [
     { key: 'sent',     label: 'Sent',      color: '#6da7ec' },
     { key: 'delivered', label: 'Delivered', color: '#2a78d6' },
     { key: 'read',     label: 'Read',      color: '#184f95' },
-    { key: 'replied',  label: 'Replied',   color: '#199e70' },
   ];
 
   function renderFunnelChart(j) {
@@ -247,9 +243,8 @@
       sent:      j.sent || 0,
       delivered: j.delivered_count || 0,
       read:      j.read_count || 0,
-      replied:   j.replied_count || 0,
     };
-    const max = Math.max(1, values.sent, values.delivered, values.read, values.replied);
+    const max = Math.max(1, values.sent, values.delivered, values.read);
 
     document.getElementById('an-funnel').innerHTML = FUNNEL_ROWS.map(row => {
       const v   = values[row.key];
