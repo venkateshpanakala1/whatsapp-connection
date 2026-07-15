@@ -44,8 +44,19 @@ def login_required(view):
     return wrapped
 
 
+def admin_required(view):
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not session.get('is_admin'):
+            return redirect('/login')
+        return view(*args, **kwargs)
+    return wrapped
+
+
 @app.route('/login')
 def login_page():
+    if session.get('is_admin'):
+        return redirect('/admin')
     if 'user_id' in session:
         return redirect('/')
     return send_from_directory('public', 'login.html')
@@ -53,6 +64,11 @@ def login_page():
 @app.route('/forgot-password')
 def forgot_password_page():
     return send_from_directory('public', 'forgot-password.html')
+
+@app.route('/admin')
+@admin_required
+def admin_page():
+    return send_from_directory('public', 'admin.html')
 
 @app.route('/')
 @login_required

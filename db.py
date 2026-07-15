@@ -179,6 +179,8 @@ def init_db():
         cur.execute("ALTER TABLE send_logs              ADD COLUMN IF NOT EXISTS wamid VARCHAR(100);")
         cur.execute("ALTER TABLE send_logs              ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMP;")
         cur.execute("ALTER TABLE send_logs              ADD COLUMN IF NOT EXISTS read_at TIMESTAMP;")
+        # Tenant name, captured when an admin registers a new tenant account.
+        cur.execute("ALTER TABLE users                  ADD COLUMN IF NOT EXISTS name VARCHAR(200);")
         cur.execute("ALTER TABLE counter_replies       ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")
         # Change contacts UNIQUE(phone) → UNIQUE(user_id, phone) so two users can share same number
         cur.execute("""

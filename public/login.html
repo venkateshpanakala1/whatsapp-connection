@@ -526,8 +526,10 @@
       const data = await res.json();
 
       if (data.success) {
-        showAlert('success', '✓ Welcome back! Redirecting...');
-        setTimeout(() => { window.location.href = isStandalone() ? '/replies' : '/'; }, 900);
+        showAlert('success', data.admin ? '✓ Welcome, admin! Redirecting...' : '✓ Welcome back! Redirecting...');
+        setTimeout(() => {
+          window.location.href = data.admin ? '/admin' : (isStandalone() ? '/replies' : '/');
+        }, 900);
       } else {
         showAlert('error', data.error || 'Login failed');
         if (data.field) setFieldError(data.field, data.error);

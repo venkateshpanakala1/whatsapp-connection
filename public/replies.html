@@ -788,10 +788,11 @@
       const res  = await fetch('/api/auth/me', { credentials: 'same-origin' });
       const data = await res.json();
       if (data.logged_in) {
-        document.getElementById('sidebar-email').textContent = data.email;
+        const displayName = data.name || data.email;
+        document.getElementById('sidebar-email').textContent = displayName;
         document.getElementById('sidebar-user').style.display = 'block';
-        document.getElementById('hdr-email').textContent = data.email;
-        document.getElementById('hdr-avatar').textContent = data.email.charAt(0).toUpperCase();
+        document.getElementById('hdr-email').textContent = displayName;
+        document.getElementById('hdr-avatar').textContent = displayName.charAt(0).toUpperCase();
       }
     } catch (e) {}
   }
