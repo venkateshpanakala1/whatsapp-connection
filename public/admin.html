@@ -92,6 +92,23 @@
   </div>
 </div>
 
+<!-- Delete confirmation modal -->
+<div class="modal-overlay" id="confirm-modal" onclick="if(event.target===this) closeConfirmModal()">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span class="modal-title">Delete tenant?</span>
+      <button class="modal-close" onclick="closeConfirmModal()">✕</button>
+    </div>
+    <div style="padding:20px 24px">
+      <p id="confirm-message" style="color:var(--text-2);font-size:14px;line-height:1.6"></p>
+      <div style="display:flex;gap:10px;margin-top:22px">
+        <button class="btn btn-outline" style="flex:1" onclick="closeConfirmModal()">Cancel</button>
+        <button class="btn btn-danger" style="flex:1;border-color:transparent;background:#dc2626;color:#fff" id="confirm-delete-btn" onclick="confirmDeleteTenant()">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   function esc(str) {
     return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -155,17 +172,50 @@
         return;
       }
       el.innerHTML = `<div class="table-wrap"><table>
-        <thead><tr><th>Name</th><th>Email</th><th>Registered</th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Registered</th><th></th></tr></thead>
         <tbody>${tenants.map(t => `
           <tr>
             <td>${esc(t.name || '—')}</td>
             <td>${esc(t.email)}</td>
             <td>${t.created_at ? new Date(t.created_at).toLocaleString([], {month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit'}) : ''}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="deleteTenant(${t.id}, '${esc(t.name || t.email).replace(/'/g, "\\'")}')">🗑 Delete</button></td>
           </tr>`).join('')}
         </tbody>
       </table></div>`;
     } catch (e) {
       el.innerHTML = `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+    }
+  }
+
+  let pendingDeleteId = null;
+
+  function deleteTenant(id, label) {
+    pendingDeleteId = id;
+    document.getElementById('confirm-message').innerHTML =
+      `Delete <strong>${esc(label)}</strong> and ALL of their data — contacts, templates, sent messages, replies, everything?<br><br>This cannot be undone.`;
+    document.getElementById('confirm-modal').classList.add('open');
+  }
+
+  function closeConfirmModal() {
+    document.getElementById('confirm-modal').classList.remove('open');
+    pendingDeleteId = null;
+  }
+
+  async function confirmDeleteTenant() {
+    const id = pendingDeleteId;
+    if (!id) return;
+    closeConfirmModal();
+    try {
+      const res  = await fetch(`/api/auth/admin/tenants/${id}`, { method: 'DELETE', credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.success) {
+        showAlert('reg-alert', 'success', data.message);
+        loadTenants();
+      } else {
+        showAlert('reg-alert', 'error', data.error || 'Could not delete tenant');
+      }
+    } catch (e) {
+      showAlert('reg-alert', 'error', 'Server error: ' + e.message);
     }
   }
 

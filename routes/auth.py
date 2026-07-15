@@ -13,7 +13,7 @@ EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 # to reach the tenant-registration screen; it can't use any of the tenant app
 # pages itself. Defaults match what was asked for, but can be overridden via
 # env vars without a code change.
-ADMIN_EMAIL    = os.getenv('ADMIN_EMAIL', 'adminv3@gmail.com').strip().lower()
+ADMIN_EMAIL    = os.getenv('ADMIN_EMAIL', 'admin@v3.com').strip().lower()
 ADMIN_PASSWORD = os.getenv('ADMIN_PASSWORD', '123456')
 
 
@@ -135,6 +135,51 @@ def list_tenants():
         ]
         return jsonify({'success': True, 'tenants': tenants})
     except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        put_conn(conn)
+
+
+# Every table a tenant's data can end up in, in FK-safe order (children
+# before parents) — reply_media has no direct user_id, it hangs off
+# replies.id, so it has to go first or the replies delete would violate
+# that foreign key.
+TENANT_DATA_TABLES = [
+    ('reply_media', 'reply_id IN (SELECT id FROM replies WHERE user_id = %s)'),
+    ('replies', 'user_id = %s'),
+    ('whatsapp_connections', 'user_id = %s'),
+    ('whatsapp_templates', 'user_id = %s'),
+    ('contacts', 'user_id = %s'),
+    ('send_logs', 'user_id = %s'),
+    ('counter_replies', 'user_id = %s'),
+    ('send_jobs', 'user_id = %s'),
+    ('template_media', 'user_id = %s'),
+    ('push_subscriptions', 'user_id = %s'),
+]
+
+
+@auth_bp.route('/admin/tenants/<int:tenant_id>', methods=['DELETE'])
+@admin_required
+def delete_tenant(tenant_id):
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute('SELECT email FROM users WHERE id = %s', (tenant_id,))
+        row = cur.fetchone()
+        if not row:
+            return jsonify({'error': 'Tenant not found'}), 404
+
+        # One transaction — either every table is cleaned up and the tenant
+        # row is gone, or (on any failure) nothing is touched at all.
+        for table, where in TENANT_DATA_TABLES:
+            cur.execute(f'DELETE FROM {table} WHERE {where}', (tenant_id,))
+        cur.execute('DELETE FROM users WHERE id = %s', (tenant_id,))
+
+        conn.commit()
+        cur.close()
+        return jsonify({'success': True, 'message': f'Tenant "{row[0]}" and all their data have been deleted'})
+    except Exception as e:
+        conn.rollback()
         return jsonify({'error': str(e)}), 500
     finally:
         put_conn(conn)
