@@ -577,15 +577,32 @@
   }
 
   async function tryReconnect() {
-    const savedId = localStorage.getItem('wa_job_id');
-    if (!savedId) return;
-    const res  = await fetch(`${API}/status/${savedId}`);
-    const data = await res.json();
-    if (!data.found || data.status === 'done' || data.status === 'cancelled') {
-      localStorage.removeItem('wa_job_id'); return;
+    let jobId = null, data = null;
+
+    // Server-authoritative first: find any job still running for this
+    // account, regardless of which device/browser started it — localStorage
+    // only knows about jobs *this* browser started, which misses e.g. a job
+    // started on a laptop when reopening the page on a phone.
+    try {
+      const res    = await fetch(`${API}/active`);
+      const active = await res.json();
+      if (active.found) { jobId = active.job_id; data = active; }
+    } catch (e) {}
+
+    if (!jobId) {
+      const savedId = localStorage.getItem('wa_job_id');
+      if (!savedId) return;
+      const res = await fetch(`${API}/status/${savedId}`);
+      data = await res.json();
+      if (!data.found || data.status === 'done' || data.status === 'cancelled') {
+        localStorage.removeItem('wa_job_id'); return;
+      }
+      jobId = savedId;
     }
+
+    localStorage.setItem('wa_job_id', jobId);
     document.getElementById('reconnect-banner').classList.add('show');
-    activeJobId = savedId;
+    activeJobId = jobId;
     document.getElementById('stat-total').textContent  = data.total;
     document.getElementById('stat-sent').textContent   = data.sent;
     document.getElementById('stat-failed').textContent = data.failed;
@@ -595,7 +612,7 @@
     document.getElementById('cancel-btn').disabled = false;
     updateProgress(data);
     setTimeout(() => { document.getElementById('reconnect-banner').classList.remove('show'); }, 3000);
-    connectSSE(savedId);
+    connectSSE(jobId);
   }
 
   function resetBtn() {
