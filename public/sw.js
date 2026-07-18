@@ -4,7 +4,7 @@
 // logged-in state, live status and SSE streams behave exactly like the
 // regular site.
 
-const CACHE_NAME = 'v3-shell-v1';
+const CACHE_NAME = 'v7-shell-v2';
 const SHELL_ASSETS = ['/style.css', '/manifest.json'];
 
 self.addEventListener('install', (event) => {
