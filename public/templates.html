@@ -142,20 +142,18 @@
       </div>
       <button class="btn btn-outline btn-sm" onclick="loadTemplates()">↻ Refresh</button>
     </div>
-    <div class="tabs-wrap card-sm" style="max-width:560px">
-      <div class="tab" id="tpl-tab-create" onclick="switchTplTab('create')">Create Template</div>
+    <div class="tabs-wrap card-sm" style="max-width:400px">
       <div class="tab active" id="tpl-tab-recent" onclick="switchTplTab('recent')">Recent Templates</div>
       <div class="tab" id="tpl-tab-all" onclick="switchTplTab('all')">All Templates</div>
     </div>
     <div class="card-tabs card-sm" style="max-width:none">
 
-      <!-- Recent / All Templates -->
-      <div id="panel-list" class="tab-panel active">
+      <!-- Recent Templates + Create Template -->
+      <div id="panel-recent" class="tab-panel active">
         <div id="templates-list"><div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading templates...</div></div></div>
-      </div>
 
-      <!-- Create Template -->
-      <div id="panel-create" class="tab-panel">
+        <div class="card-title" style="margin:28px 0 16px">Create New Template</div>
+
         <div class="row-2">
           <div class="form-group">
             <label>Template Name</label>
@@ -238,6 +236,11 @@
         <div class="alert" id="create-alert"></div>
       </div>
 
+      <!-- All Templates -->
+      <div id="panel-all" class="tab-panel">
+        <div id="templates-list-all"><div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading templates...</div></div></div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -280,8 +283,7 @@
     } catch (e) {}
   }
 
-  let tplData     = { data: [], all: [], total: 0 };
-  let activeTplTab = 'recent';
+  let tplData = { data: [], all: [], total: 0 };
 
   function renderTemplateCards(list) {
     if (!list.length) {
@@ -314,38 +316,38 @@
     return `<div class="tpl-grid">${html}</div>`;
   }
 
-  function renderActiveTplTab() {
-    const list = activeTplTab === 'all' ? tplData.all : tplData.data;
-    document.getElementById('templates-list').innerHTML = renderTemplateCards(list);
-    document.getElementById('tpl-count-label').textContent =
-      `(${activeTplTab === 'all' ? `${tplData.total} total` : `last ${tplData.data.length} of ${tplData.total}`})`;
+  function renderTplLists() {
+    document.getElementById('templates-list').innerHTML     = renderTemplateCards(tplData.data);
+    document.getElementById('templates-list-all').innerHTML = renderTemplateCards(tplData.all);
+    document.getElementById('tpl-count-label').textContent  = `(${tplData.total} total)`;
   }
 
   function switchTplTab(tab) {
-    document.getElementById('tpl-tab-create').classList.toggle('active', tab === 'create');
     document.getElementById('tpl-tab-recent').classList.toggle('active', tab === 'recent');
     document.getElementById('tpl-tab-all').classList.toggle('active', tab === 'all');
-    document.getElementById('panel-create').classList.toggle('active', tab === 'create');
-    document.getElementById('panel-list').classList.toggle('active', tab !== 'create');
-    if (tab === 'recent' || tab === 'all') {
-      activeTplTab = tab;
-      renderActiveTplTab();
-    }
+    document.getElementById('panel-recent').classList.toggle('active', tab === 'recent');
+    document.getElementById('panel-all').classList.toggle('active', tab === 'all');
   }
 
   async function loadTemplates() {
-    document.getElementById('templates-list').innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>';
+    const loadingHtml = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>';
+    document.getElementById('templates-list').innerHTML     = loadingHtml;
+    document.getElementById('templates-list-all').innerHTML = loadingHtml;
     try {
       const res  = await fetch(`${API}/list`);
       const data = await res.json();
       if (!data.success) {
-        document.getElementById('templates-list').innerHTML = `<div class="empty-state"><div class="empty-text">Error: ${data.error || 'Failed to load templates'}</div></div>`;
+        const errHtml = `<div class="empty-state"><div class="empty-text">Error: ${data.error || 'Failed to load templates'}</div></div>`;
+        document.getElementById('templates-list').innerHTML     = errHtml;
+        document.getElementById('templates-list-all').innerHTML = errHtml;
         return;
       }
       tplData = { data: data.data || [], all: data.all || [], total: data.total ?? (data.all || []).length };
-      renderActiveTplTab();
+      renderTplLists();
     } catch (e) {
-      document.getElementById('templates-list').innerHTML = `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+      const errHtml = `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+      document.getElementById('templates-list').innerHTML     = errHtml;
+      document.getElementById('templates-list-all').innerHTML = errHtml;
     }
   }
 
