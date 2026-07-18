@@ -132,6 +132,11 @@ def get_job(job_id):
         put_conn(conn)
 
 
+def is_cancelled(job_id):
+    job = get_job(job_id)
+    return not job or job['status'] == 'cancelled'
+
+
 def wait_if_paused(job_id):
     while True:
         job = get_job(job_id)
@@ -180,6 +185,8 @@ def send_worker(job_id, contacts, template_name, template_lang, creds, delay, us
 
     for contact in contacts:
         wait_if_paused(job_id)
+        if is_cancelled(job_id):
+            return
 
         phone = contact['phone']
         name  = contact.get('name', '')
@@ -219,6 +226,8 @@ def send_worker(job_id, contacts, template_name, template_lang, creds, delay, us
         elapsed = 0
         while elapsed < delay:
             wait_if_paused(job_id)
+            if is_cancelled(job_id):
+                return
             time.sleep(0.5)
             elapsed += 0.5
 
@@ -328,6 +337,20 @@ def resume_job(job_id):
     return jsonify({'success': True})
 
 
+# POST /api/send/cancel/<job_id>  — stops the worker for good (unlike pause,
+# which just parks it); already-sent messages are untouched, remaining
+# contacts are simply never sent.
+@send_bp.route('/cancel/<job_id>', methods=['POST'])
+def cancel_job(job_id):
+    job = get_job(job_id)
+    if not job:
+        return jsonify({'error': 'Job not found'}), 404
+    if job['status'] in ('done', 'cancelled'):
+        return jsonify({'error': f"Job is already {job['status']}"}), 400
+    set_job_status(job_id, 'cancelled')
+    return jsonify({'success': True})
+
+
 # GET /api/send/status/<job_id>
 @send_bp.route('/status/<job_id>')
 def job_status(job_id):
@@ -402,7 +425,7 @@ def progress(job_id):
         while True:
             job = get_job(job_id) or {}
             yield f"data: {json.dumps(job)}\n\n"
-            if job.get('status') == 'done':
+            if job.get('status') in ('done', 'cancelled'):
                 break
             time.sleep(1)
 
