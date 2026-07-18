@@ -37,7 +37,7 @@ def get_app_id(access_token):
 
 
 # GET /api/templates/list
-# Returns the 2 most recent templates in `data` (what the page shows by
+# Returns the single most recent template in `data` (what the page shows by
 # default) plus the full list in `all` / count in `total`, so the "All
 # Templates" tab can render everything without a second round trip.
 @templates_bp.route('/list', methods=['GET'])
@@ -64,7 +64,7 @@ def list_templates():
 
         return jsonify({
             'success': True,
-            'data':  all_templates[:2],
+            'data':  all_templates[:1],
             'all':   all_templates,
             'total': len(all_templates),
         })
