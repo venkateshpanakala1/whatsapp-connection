@@ -239,6 +239,7 @@
       <!-- All Templates -->
       <div id="panel-all" class="tab-panel">
         <div id="templates-list-all"><div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading templates...</div></div></div>
+        <div id="tpl-pagination" style="display:none;align-items:center;justify-content:center;gap:14px;margin-top:18px"></div>
       </div>
 
     </div>
@@ -316,10 +317,41 @@
     return `<div class="tpl-grid">${html}</div>`;
   }
 
+  const ALL_TPL_PAGE_SIZE = 8;
+  let allTplPage = 1;
+
   function renderTplLists() {
-    document.getElementById('templates-list').innerHTML     = renderTemplateCards(tplData.data);
-    document.getElementById('templates-list-all').innerHTML = renderTemplateCards(tplData.all);
-    document.getElementById('tpl-count-label').textContent  = `(${tplData.total} total)`;
+    document.getElementById('templates-list').innerHTML    = renderTemplateCards(tplData.data);
+    document.getElementById('tpl-count-label').textContent = `(${tplData.total} total)`;
+    allTplPage = 1;
+    renderAllTplPage();
+  }
+
+  function renderAllTplPage() {
+    const totalPages = Math.max(1, Math.ceil(tplData.all.length / ALL_TPL_PAGE_SIZE));
+    allTplPage = Math.min(Math.max(1, allTplPage), totalPages);
+    const start = (allTplPage - 1) * ALL_TPL_PAGE_SIZE;
+    document.getElementById('templates-list-all').innerHTML =
+      renderTemplateCards(tplData.all.slice(start, start + ALL_TPL_PAGE_SIZE));
+
+    const pag = document.getElementById('tpl-pagination');
+    if (tplData.all.length <= ALL_TPL_PAGE_SIZE) {
+      pag.style.display = 'none';
+      pag.innerHTML = '';
+      return;
+    }
+    pag.style.display = 'flex';
+    pag.innerHTML = `
+      <button class="btn btn-outline btn-sm" onclick="changeAllTplPage(-1)" ${allTplPage === 1 ? 'disabled' : ''}>‹ Prev</button>
+      <span style="font-size:12.5px;color:var(--text-2)">Page ${allTplPage} of ${totalPages}</span>
+      <button class="btn btn-outline btn-sm" onclick="changeAllTplPage(1)" ${allTplPage === totalPages ? 'disabled' : ''}>Next ›</button>
+    `;
+  }
+
+  function changeAllTplPage(delta) {
+    allTplPage += delta;
+    renderAllTplPage();
+    document.getElementById('templates-list-all').scrollIntoView({ block: 'nearest' });
   }
 
   function switchTplTab(tab) {
@@ -333,6 +365,7 @@
     const loadingHtml = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>';
     document.getElementById('templates-list').innerHTML     = loadingHtml;
     document.getElementById('templates-list-all').innerHTML = loadingHtml;
+    document.getElementById('tpl-pagination').style.display = 'none';
     try {
       const res  = await fetch(`${API}/list`);
       const data = await res.json();
