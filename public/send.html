@@ -507,16 +507,32 @@
 
   async function pauseJob() {
     if (!activeJobId) return;
-    await fetch(`${API}/pause/${activeJobId}`, { method: 'POST' });
-    document.getElementById('pause-btn').disabled  = true;
-    document.getElementById('resume-btn').disabled = false;
+    const btn = document.getElementById('pause-btn');
+    btn.disabled = true;
+    try {
+      const res  = await fetch(`${API}/pause/${activeJobId}`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) { showError(data.error || 'Could not pause — try again.'); btn.disabled = false; return; }
+      document.getElementById('resume-btn').disabled = false;
+    } catch (e) {
+      showError('Server error: ' + e.message);
+      btn.disabled = false;
+    }
   }
 
   async function resumeJob() {
     if (!activeJobId) return;
-    await fetch(`${API}/resume/${activeJobId}`, { method: 'POST' });
-    document.getElementById('pause-btn').disabled  = false;
-    document.getElementById('resume-btn').disabled = true;
+    const btn = document.getElementById('resume-btn');
+    btn.disabled = true;
+    try {
+      const res  = await fetch(`${API}/resume/${activeJobId}`, { method: 'POST' });
+      const data = await res.json();
+      if (!data.success) { showError(data.error || 'Could not resume — try again.'); btn.disabled = false; return; }
+      document.getElementById('pause-btn').disabled = false;
+    } catch (e) {
+      showError('Server error: ' + e.message);
+      btn.disabled = false;
+    }
   }
 
   async function tryReconnect() {

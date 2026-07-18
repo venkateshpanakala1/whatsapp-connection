@@ -306,8 +306,11 @@ def start_send():
 # POST /api/send/pause/<job_id>
 @send_bp.route('/pause/<job_id>', methods=['POST'])
 def pause_job(job_id):
-    if not get_job(job_id):
+    job = get_job(job_id)
+    if not job:
         return jsonify({'error': 'Job not found'}), 404
+    if job['status'] != 'running':
+        return jsonify({'error': f"Can't pause a job that is {job['status']}"}), 400
     set_job_status(job_id, 'paused')
     return jsonify({'success': True})
 
@@ -315,8 +318,11 @@ def pause_job(job_id):
 # POST /api/send/resume/<job_id>
 @send_bp.route('/resume/<job_id>', methods=['POST'])
 def resume_job(job_id):
-    if not get_job(job_id):
+    job = get_job(job_id)
+    if not job:
         return jsonify({'error': 'Job not found'}), 404
+    if job['status'] != 'paused':
+        return jsonify({'error': f"Can't resume a job that is {job['status']}"}), 400
     set_job_status(job_id, 'running')
     return jsonify({'success': True})
 
