@@ -410,7 +410,7 @@
 
 <!-- Brand mark -->
 <div class="brand-chip">
-  <div class="chip-icon"><img src="/v7.jpeg" alt="V7 logo"></div>
+  <div class="chip-icon"><img src="/icon-192.png" alt="V7 logo"></div>
   <div class="chip-text">V7</div>
 </div>
 
@@ -501,6 +501,19 @@
     clearFieldError('password');
   }
 
+  // Where a regular (non-admin, non-standalone) login should land: skip the
+  // WhatsApp Connect screen and go straight to Templates if a connection is
+  // already active, since there's nothing to do on Connect in that case.
+  async function getPostLoginRedirect() {
+    try {
+      const res  = await fetch('/api/whatsapp/status', { credentials: 'same-origin' });
+      const data = await res.json();
+      return (data.connected && data.data?.status === 'active') ? '/templates' : '/';
+    } catch (e) {
+      return '/';
+    }
+  }
+
   async function doLogin() {
     const email    = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
@@ -533,8 +546,9 @@
 
       if (data.success) {
         showAlert('success', data.admin ? '✓ Welcome, admin! Redirecting...' : '✓ Welcome back! Redirecting...');
+        const target = data.admin ? '/admin' : (isStandalone() ? '/replies' : await getPostLoginRedirect());
         setTimeout(() => {
-          window.location.href = data.admin ? '/admin' : (isStandalone() ? '/replies' : '/');
+          window.location.href = target;
         }, 900);
       } else {
         showAlert('error', data.error || 'Login failed');
