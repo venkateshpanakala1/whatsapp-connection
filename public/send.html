@@ -46,6 +46,11 @@
     .btn-pause:hover:not(:disabled)  { background: #fde68a; }
     .btn-resume { background: #d1fae5; color: #065f46; border: 1.5px solid #6ee7b7; }
     .btn-resume:hover:not(:disabled) { background: #a7f3d0; }
+    .btn-cancel { width: 100%; margin-top: 10px; background: #fee2e2; color: #991b1b; border: 1.5px solid #fca5a5; }
+    .btn-cancel:hover:not(:disabled) { background: #fecaca; }
+
+    .pill-cancelled { background: #fee2e2; color: #991b1b; }
+    .pill-cancelled::before { background: #ef4444; }
 
     /* Progress section */
     .progress-section { display: none; }
@@ -221,6 +226,7 @@
       <button class="btn-ctrl btn-pause"  id="pause-btn"  onclick="pauseJob()">⏸ Pause</button>
       <button class="btn-ctrl btn-resume" id="resume-btn" onclick="resumeJob()" disabled>▶ Resume</button>
     </div>
+    <button class="btn-ctrl btn-cancel" id="cancel-btn" onclick="cancelJob()">✕ Cancel</button>
 
     <div class="done-banner" id="done-banner"></div>
     <div class="error-list"  id="error-list"></div>
@@ -447,6 +453,9 @@
       document.getElementById('stat-total').textContent = data.total;
       document.getElementById('progress-section').classList.add('show');
       document.getElementById('run-btn').textContent = '📤 Sending...';
+      document.getElementById('pause-btn').disabled  = false;
+      document.getElementById('resume-btn').disabled = true;
+      document.getElementById('cancel-btn').disabled = false;
       connectSSE(activeJobId);
     } catch (e) { showError('Server error: ' + e.message); resetBtn(); }
   }
@@ -457,7 +466,7 @@
     eventSource.onmessage = e => {
       const d = JSON.parse(e.data);
       updateProgress(d);
-      if (d.status === 'done') { eventSource.close(); onDone(d); }
+      if (d.status === 'done' || d.status === 'cancelled') { eventSource.close(); onDone(d); }
     };
     eventSource.onerror = () => { eventSource.close(); };
   }
@@ -487,15 +496,21 @@
   }
 
   function onDone(d) {
+    const cancelled = d.status === 'cancelled';
     const pill = document.getElementById('status-pill');
-    pill.className = 'status-pill pill-done'; pill.textContent = 'Done ✓';
-    document.getElementById('prog-label').textContent    = 'Complete';
-    document.getElementById('progress-bar').style.width  = '100%';
+    pill.className = cancelled ? 'status-pill pill-cancelled' : 'status-pill pill-done';
+    pill.textContent = cancelled ? 'Cancelled' : 'Done ✓';
+    document.getElementById('prog-label').textContent = cancelled
+      ? `Cancelled at ${d.current} of ${d.total}` : 'Complete';
+    if (!cancelled) document.getElementById('progress-bar').style.width = '100%';
     document.getElementById('progress-bar').classList.remove('paused');
     document.getElementById('pause-btn').disabled  = true;
     document.getElementById('resume-btn').disabled = true;
+    document.getElementById('cancel-btn').disabled = true;
     const banner = document.getElementById('done-banner');
-    banner.textContent = `🎉 Done! ${d.sent} messages sent successfully${d.failed ? `, ${d.failed} failed` : ''}.`;
+    banner.textContent = cancelled
+      ? `⏹ Cancelled. ${d.sent} sent, ${d.failed} failed, ${d.total - d.current} never sent.`
+      : `🎉 Done! ${d.sent} messages sent successfully${d.failed ? `, ${d.failed} failed` : ''}.`;
     banner.classList.add('show');
     if (d.errors && d.errors.length) {
       const el = document.getElementById('error-list');
@@ -521,12 +536,23 @@
     document.getElementById('resume-btn').disabled = true;
   }
 
+  async function cancelJob() {
+    if (!activeJobId) return;
+    if (!confirm('Cancel this bulk send? Contacts not yet messaged will never be sent, and this cannot be undone.')) return;
+    document.getElementById('pause-btn').disabled  = true;
+    document.getElementById('resume-btn').disabled = true;
+    document.getElementById('cancel-btn').disabled = true;
+    await fetch(`${API}/cancel/${activeJobId}`, { method: 'POST' });
+  }
+
   async function tryReconnect() {
     const savedId = localStorage.getItem('wa_job_id');
     if (!savedId) return;
     const res  = await fetch(`${API}/status/${savedId}`);
     const data = await res.json();
-    if (!data.found || data.status === 'done') { localStorage.removeItem('wa_job_id'); return; }
+    if (!data.found || data.status === 'done' || data.status === 'cancelled') {
+      localStorage.removeItem('wa_job_id'); return;
+    }
     document.getElementById('reconnect-banner').classList.add('show');
     activeJobId = savedId;
     document.getElementById('stat-total').textContent  = data.total;
@@ -535,6 +561,7 @@
     document.getElementById('progress-section').classList.add('show');
     document.getElementById('run-btn').disabled    = true;
     document.getElementById('run-btn').textContent = '📤 Sending...';
+    document.getElementById('cancel-btn').disabled = false;
     updateProgress(data);
     setTimeout(() => { document.getElementById('reconnect-banner').classList.remove('show'); }, 3000);
     connectSSE(savedId);

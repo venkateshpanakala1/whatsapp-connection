@@ -194,9 +194,10 @@
   }
 
   function statusBadgeClass(status) {
-    if (status === 'done')    return 'badge-green';
-    if (status === 'running') return 'badge-blue';
-    if (status === 'paused')  return 'badge-yellow';
+    if (status === 'done')      return 'badge-green';
+    if (status === 'running')   return 'badge-blue';
+    if (status === 'paused')    return 'badge-yellow';
+    if (status === 'cancelled') return 'badge-red';
     return 'badge-gray';
   }
 
