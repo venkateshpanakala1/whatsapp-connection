@@ -103,7 +103,7 @@ def replies_page():
 
 @app.route('/favicon.ico')
 def favicon():
-    return '', 204
+    return send_from_directory('public', 'favicon-64.png')
 
 
 @app.route('/privacy-policy')
