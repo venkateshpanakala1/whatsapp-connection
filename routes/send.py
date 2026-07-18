@@ -342,39 +342,6 @@ def cancel_job(job_id):
     return jsonify({'success': True})
 
 
-# GET /api/send/active  — any bulk-send job still running for this account,
-# found server-side by user_id rather than a saved job id. Job state lives in
-# the DB, not per-browser localStorage, so a job started on one device (e.g.
-# a laptop) is otherwise invisible to another device (e.g. a phone) logged
-# into the same account — this is what lets the Bulk Send page reconnect
-# regardless of which device actually started the job.
-@send_bp.route('/active', methods=['GET'])
-def active_job():
-    user_id = session.get('user_id')
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-            SELECT id, status, current, total, sent, failed, errors
-            FROM send_jobs
-            WHERE user_id = %s AND status IN ('pending', 'running', 'paused')
-            ORDER BY created_at DESC LIMIT 1
-        """, (user_id,))
-        row = cur.fetchone()
-        cur.close()
-        if not row:
-            return jsonify({'found': False})
-        return jsonify({
-            'found': True, 'job_id': row[0], 'status': row[1],
-            'current': row[2], 'total': row[3], 'sent': row[4],
-            'failed': row[5], 'errors': row[6] or []
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-    finally:
-        put_conn(conn)
-
-
 # GET /api/send/status/<job_id>
 @send_bp.route('/status/<job_id>')
 def job_status(job_id):

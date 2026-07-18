@@ -606,32 +606,18 @@
   }
 
   async function tryReconnect() {
-    let jobId = null, data = null;
-
-    // Server-authoritative first: find any job still running for this
-    // account, regardless of which device/browser started it — localStorage
-    // only knows about jobs *this* browser started, which misses e.g. a job
-    // started on a laptop when reopening the page on a phone.
-    try {
-      const res    = await fetch(`${API}/active`);
-      const active = await res.json();
-      if (active.found) { jobId = active.job_id; data = active; }
-    } catch (e) {}
-
-    if (!jobId) {
-      const savedId = localStorage.getItem('wa_job_id');
-      if (!savedId) return;
-      const res = await fetch(`${API}/status/${savedId}`);
-      data = await res.json();
-      if (!data.found || data.status === 'done' || data.status === 'cancelled') {
-        localStorage.removeItem('wa_job_id'); return;
-      }
-      jobId = savedId;
+    // Per-device only: reconnect to a job *this* browser started (tracked via
+    // localStorage), so laptop and phone can each run their own independent
+    // bulk send under the same login without one auto-attaching to the other's job.
+    const savedId = localStorage.getItem('wa_job_id');
+    if (!savedId) return;
+    const res  = await fetch(`${API}/status/${savedId}`);
+    const data = await res.json();
+    if (!data.found || data.status === 'done' || data.status === 'cancelled') {
+      localStorage.removeItem('wa_job_id'); return;
     }
-
-    localStorage.setItem('wa_job_id', jobId);
     document.getElementById('reconnect-banner').classList.add('show');
-    activeJobId = jobId;
+    activeJobId = savedId;
     document.getElementById('stat-total').textContent  = data.total;
     document.getElementById('stat-sent').textContent   = data.sent;
     document.getElementById('stat-failed').textContent = data.failed;
@@ -641,7 +627,7 @@
     document.getElementById('cancel-btn').disabled = false;
     updateProgress(data);
     setTimeout(() => { document.getElementById('reconnect-banner').classList.remove('show'); }, 3000);
-    connectSSE(jobId);
+    connectSSE(savedId);
   }
 
   function resetBtn() {
