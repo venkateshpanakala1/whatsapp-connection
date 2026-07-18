@@ -1,6 +1,6 @@
 {
-  "name": "vQube",
-  "short_name": "vQube",
+  "name": "V7",
+  "short_name": "V7",
   "description": "Manage WhatsApp templates, contacts, bulk sends and replies.",
   "start_url": "/replies",
   "scope": "/",
