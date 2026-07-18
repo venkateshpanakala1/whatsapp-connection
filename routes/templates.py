@@ -37,26 +37,37 @@ def get_app_id(access_token):
 
 
 # GET /api/templates/list
+# Returns the 2 most recent templates in `data` (what the page shows by
+# default) plus the full list in `all` / count in `total`, so the "All
+# Templates" tab can render everything without a second round trip.
 @templates_bp.route('/list', methods=['GET'])
 def list_templates():
     creds = get_wa_credentials(session.get('user_id'))
     if not creds:
         return jsonify({'error': 'WhatsApp not connected'}), 400
     try:
-        res = http.get(
-            f"{META_API}/{creds['waba_id']}/message_templates",
-            params={'limit': 2, 'fields': 'id,name,category,language,status,components,created_time'},
-            headers={'Authorization': f"Bearer {creds['access_token']}"},
-            timeout=10
-        )
-        data = res.json()
-        if 'error' in data:
-            return jsonify({'error': data['error']['message']}), 400
+        all_templates = []
+        url     = f"{META_API}/{creds['waba_id']}/message_templates"
+        params  = {'limit': 100, 'fields': 'id,name,category,language,status,components,created_time'}
+        headers = {'Authorization': f"Bearer {creds['access_token']}"}
 
-        templates = data.get('data', [])
-        templates.sort(key=lambda t: t.get('created_time', ''), reverse=True)
+        while url:
+            res  = http.get(url, params=params, headers=headers, timeout=10)
+            data = res.json()
+            if 'error' in data:
+                return jsonify({'error': data['error']['message']}), 400
+            all_templates.extend(data.get('data', []))
+            url    = data.get('paging', {}).get('next')
+            params = {}
 
-        return jsonify({'success': True, 'data': templates[:2]})
+        all_templates.sort(key=lambda t: t.get('created_time', ''), reverse=True)
+
+        return jsonify({
+            'success': True,
+            'data':  all_templates[:2],
+            'all':   all_templates,
+            'total': len(all_templates),
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
