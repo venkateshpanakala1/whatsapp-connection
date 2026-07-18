@@ -7,8 +7,6 @@
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#075e54">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="icon" type="image/png" href="/favicon-64.png">
-  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <script src="/pwa.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -46,11 +44,6 @@
     .btn-pause:hover:not(:disabled)  { background: #fde68a; }
     .btn-resume { background: #d1fae5; color: #065f46; border: 1.5px solid #6ee7b7; }
     .btn-resume:hover:not(:disabled) { background: #a7f3d0; }
-    .btn-cancel { width: 100%; margin-top: 10px; background: #fee2e2; color: #991b1b; border: 1.5px solid #fca5a5; }
-    .btn-cancel:hover:not(:disabled) { background: #fecaca; }
-
-    .pill-cancelled { background: #fee2e2; color: #991b1b; }
-    .pill-cancelled::before { background: #ef4444; }
 
     /* Progress section */
     .progress-section { display: none; }
@@ -92,10 +85,10 @@
 
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <div class="brand-icon"><img src="/icon-192.png" alt="V7 logo"></div>
+    <div class="brand-icon">💬</div>
     <div class="brand-text">
-      <div class="app-name">V7</div>
-      <div class="app-sub">Stress2Solutions</div>
+      <div class="app-name">vQube</div>
+      <div class="app-sub">the untold energy</div>
     </div>
   </div>
   <nav class="sidebar-nav">
@@ -105,7 +98,6 @@
     <a href="/templates" class="nav-item"><span class="nav-icon">📋</span> Templates</a>
     <a href="/contacts"  class="nav-item"><span class="nav-icon">👥</span> Contacts</a>
     <a href="/send"      class="nav-item active"><span class="nav-icon">📤</span> Bulk Send</a>
-    <a href="/history"   class="nav-item"><span class="nav-icon">📊</span> History</a>
     <a href="/replies"   class="nav-item"><span class="nav-icon">💬</span> Replies</a>
   </nav>
   <div class="sidebar-footer">
@@ -226,27 +218,9 @@
       <button class="btn-ctrl btn-pause"  id="pause-btn"  onclick="pauseJob()">⏸ Pause</button>
       <button class="btn-ctrl btn-resume" id="resume-btn" onclick="resumeJob()" disabled>▶ Resume</button>
     </div>
-    <button class="btn-ctrl btn-cancel" id="cancel-btn" onclick="cancelJob()">✕ Cancel</button>
 
     <div class="done-banner" id="done-banner"></div>
     <div class="error-list"  id="error-list"></div>
-  </div>
-</div>
-
-<!-- Confirm modal (replaces native confirm() popups) -->
-<div class="modal-overlay" id="confirm-modal" onclick="if(event.target===this) closeConfirmModal()">
-  <div class="modal" style="width:420px">
-    <div class="modal-hdr">
-      <span class="modal-title" id="confirm-modal-title">Confirm</span>
-      <button class="modal-close" onclick="closeConfirmModal()">✕</button>
-    </div>
-    <div style="padding:20px 24px">
-      <p id="confirm-modal-message" style="color:var(--text-2);font-size:14px;line-height:1.6"></p>
-      <div style="display:flex;gap:10px;margin-top:22px">
-        <button class="btn btn-outline" style="flex:1" onclick="closeConfirmModal()">Cancel</button>
-        <button class="btn btn-danger" style="flex:1;border-color:transparent;background:#dc2626;color:#fff" id="confirm-modal-ok-btn">Confirm</button>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -254,19 +228,6 @@
   const API = '/api/send';
   let filesData     = [];
   let templatesData = [];
-
-  function showConfirm(message, onConfirm, opts) {
-    opts = opts || {};
-    document.getElementById('confirm-modal-title').textContent = opts.title || 'Confirm';
-    document.getElementById('confirm-modal-message').textContent = message;
-    const okBtn = document.getElementById('confirm-modal-ok-btn');
-    okBtn.textContent = opts.okText || 'Confirm';
-    okBtn.onclick = () => { closeConfirmModal(); onConfirm(); };
-    document.getElementById('confirm-modal').classList.add('open');
-  }
-  function closeConfirmModal() {
-    document.getElementById('confirm-modal').classList.remove('open');
-  }
   let eventSource   = null;
   let activeJobId   = null;
 
@@ -483,9 +444,6 @@
       document.getElementById('stat-total').textContent = data.total;
       document.getElementById('progress-section').classList.add('show');
       document.getElementById('run-btn').textContent = '📤 Sending...';
-      document.getElementById('pause-btn').disabled  = false;
-      document.getElementById('resume-btn').disabled = true;
-      document.getElementById('cancel-btn').disabled = false;
       connectSSE(activeJobId);
     } catch (e) { showError('Server error: ' + e.message); resetBtn(); }
   }
@@ -496,7 +454,7 @@
     eventSource.onmessage = e => {
       const d = JSON.parse(e.data);
       updateProgress(d);
-      if (d.status === 'done' || d.status === 'cancelled') { eventSource.close(); onDone(d); }
+      if (d.status === 'done') { eventSource.close(); onDone(d); }
     };
     eventSource.onerror = () => { eventSource.close(); };
   }
@@ -526,21 +484,15 @@
   }
 
   function onDone(d) {
-    const cancelled = d.status === 'cancelled';
     const pill = document.getElementById('status-pill');
-    pill.className = cancelled ? 'status-pill pill-cancelled' : 'status-pill pill-done';
-    pill.textContent = cancelled ? 'Cancelled' : 'Done ✓';
-    document.getElementById('prog-label').textContent = cancelled
-      ? `Cancelled at ${d.current} of ${d.total}` : 'Complete';
-    if (!cancelled) document.getElementById('progress-bar').style.width = '100%';
+    pill.className = 'status-pill pill-done'; pill.textContent = 'Done ✓';
+    document.getElementById('prog-label').textContent    = 'Complete';
+    document.getElementById('progress-bar').style.width  = '100%';
     document.getElementById('progress-bar').classList.remove('paused');
     document.getElementById('pause-btn').disabled  = true;
     document.getElementById('resume-btn').disabled = true;
-    document.getElementById('cancel-btn').disabled = true;
     const banner = document.getElementById('done-banner');
-    banner.textContent = cancelled
-      ? `⏹ Cancelled. ${d.sent} sent, ${d.failed} failed, ${d.total - d.current} never sent.`
-      : `🎉 Done! ${d.sent} messages sent successfully${d.failed ? `, ${d.failed} failed` : ''}.`;
+    banner.textContent = `🎉 Done! ${d.sent} messages sent successfully${d.failed ? `, ${d.failed} failed` : ''}.`;
     banner.classList.add('show');
     if (d.errors && d.errors.length) {
       const el = document.getElementById('error-list');
@@ -554,68 +506,24 @@
 
   async function pauseJob() {
     if (!activeJobId) return;
-    const btn = document.getElementById('pause-btn');
-    btn.disabled = true; // block double-clicks while the request is in flight
-    try {
-      const res  = await fetch(`${API}/pause/${activeJobId}`, { method: 'POST' });
-      const data = await res.json();
-      if (!data.success) { showError(data.error || 'Could not pause — try again.'); btn.disabled = false; return; }
-      document.getElementById('resume-btn').disabled = false;
-    } catch (e) {
-      showError('Server error: ' + e.message);
-      btn.disabled = false;
-    }
+    await fetch(`${API}/pause/${activeJobId}`, { method: 'POST' });
+    document.getElementById('pause-btn').disabled  = true;
+    document.getElementById('resume-btn').disabled = false;
   }
 
   async function resumeJob() {
     if (!activeJobId) return;
-    const btn = document.getElementById('resume-btn');
-    btn.disabled = true;
-    try {
-      const res  = await fetch(`${API}/resume/${activeJobId}`, { method: 'POST' });
-      const data = await res.json();
-      if (!data.success) { showError(data.error || 'Could not resume — try again.'); btn.disabled = false; return; }
-      document.getElementById('pause-btn').disabled = false;
-    } catch (e) {
-      showError('Server error: ' + e.message);
-      btn.disabled = false;
-    }
-  }
-
-  function cancelJob() {
-    if (!activeJobId) return;
-    showConfirm('Cancel this bulk send? Contacts not yet messaged will never be sent, and this cannot be undone.', async () => {
-      const pauseBtn = document.getElementById('pause-btn');
-      const resumeBtn = document.getElementById('resume-btn');
-      const cancelBtn = document.getElementById('cancel-btn');
-      pauseBtn.disabled = true; resumeBtn.disabled = true; cancelBtn.disabled = true;
-      try {
-        const res  = await fetch(`${API}/cancel/${activeJobId}`, { method: 'POST' });
-        const data = await res.json();
-        if (!data.success) {
-          showError(data.error || 'Could not cancel — try again.');
-          cancelBtn.disabled = false;
-        }
-        // On success, no need to re-enable anything here — the next SSE tick
-        // reports status "cancelled" and onDone() takes over the buttons.
-      } catch (e) {
-        showError('Server error: ' + e.message);
-        cancelBtn.disabled = false;
-      }
-    }, { okText: 'Cancel Send' });
+    await fetch(`${API}/resume/${activeJobId}`, { method: 'POST' });
+    document.getElementById('pause-btn').disabled  = false;
+    document.getElementById('resume-btn').disabled = true;
   }
 
   async function tryReconnect() {
-    // Per-device only: reconnect to a job *this* browser started (tracked via
-    // localStorage), so laptop and phone can each run their own independent
-    // bulk send under the same login without one auto-attaching to the other's job.
     const savedId = localStorage.getItem('wa_job_id');
     if (!savedId) return;
     const res  = await fetch(`${API}/status/${savedId}`);
     const data = await res.json();
-    if (!data.found || data.status === 'done' || data.status === 'cancelled') {
-      localStorage.removeItem('wa_job_id'); return;
-    }
+    if (!data.found || data.status === 'done') { localStorage.removeItem('wa_job_id'); return; }
     document.getElementById('reconnect-banner').classList.add('show');
     activeJobId = savedId;
     document.getElementById('stat-total').textContent  = data.total;
@@ -624,7 +532,6 @@
     document.getElementById('progress-section').classList.add('show');
     document.getElementById('run-btn').disabled    = true;
     document.getElementById('run-btn').textContent = '📤 Sending...';
-    document.getElementById('cancel-btn').disabled = false;
     updateProgress(data);
     setTimeout(() => { document.getElementById('reconnect-banner').classList.remove('show'); }, 3000);
     connectSSE(savedId);
@@ -652,32 +559,15 @@
       const res  = await fetch('/api/auth/me', { credentials: 'same-origin' });
       const data = await res.json();
       if (data.logged_in) {
-        const displayName = data.name || data.email;
-        document.getElementById('sidebar-email').textContent = displayName;
+        document.getElementById('sidebar-email').textContent = data.email;
         document.getElementById('sidebar-user').style.display = 'block';
-        document.getElementById('hdr-email').textContent = displayName;
-        document.getElementById('hdr-avatar').textContent = displayName.charAt(0).toUpperCase();
+        document.getElementById('hdr-email').textContent = data.email;
+        document.getElementById('hdr-avatar').textContent = data.email.charAt(0).toUpperCase();
       }
     } catch (e) {}
   }
   async function doLogout() {
-    try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch (e) {}
-    try { localStorage.clear(); } catch (e) {}
-    try { sessionStorage.clear(); } catch (e) {}
-    try {
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-    } catch (e) {}
-    // Best-effort: the session cookie itself is HttpOnly and already cleared
-    // by the backend logout call above — this just sweeps any other cookies.
-    try {
-      document.cookie.split(';').forEach((c) => {
-        const name = c.split('=')[0].trim();
-        if (name) document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
-      });
-    } catch (e) {}
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
     window.location.href = '/login';
   }
   loadSidebarUser();
