@@ -202,7 +202,37 @@
   </div><!-- /connect-form-wrap -->
 </div>
 
+<!-- Confirm modal (replaces native confirm() popups) -->
+<div class="modal-overlay" id="confirm-modal" onclick="if(event.target===this) closeConfirmModal()">
+  <div class="modal" style="width:420px">
+    <div class="modal-hdr">
+      <span class="modal-title" id="confirm-modal-title">Confirm</span>
+      <button class="modal-close" onclick="closeConfirmModal()">✕</button>
+    </div>
+    <div style="padding:20px 24px">
+      <p id="confirm-modal-message" style="color:var(--text-2);font-size:14px;line-height:1.6"></p>
+      <div style="display:flex;gap:10px;margin-top:22px">
+        <button class="btn btn-outline" style="flex:1" onclick="closeConfirmModal()">Cancel</button>
+        <button class="btn btn-danger" style="flex:1;border-color:transparent;background:#dc2626;color:#fff" id="confirm-modal-ok-btn">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
+  function showConfirm(message, onConfirm, opts) {
+    opts = opts || {};
+    document.getElementById('confirm-modal-title').textContent = opts.title || 'Confirm';
+    document.getElementById('confirm-modal-message').textContent = message;
+    const okBtn = document.getElementById('confirm-modal-ok-btn');
+    okBtn.textContent = opts.okText || 'Confirm';
+    okBtn.onclick = () => { closeConfirmModal(); onConfirm(); };
+    document.getElementById('confirm-modal').classList.add('open');
+  }
+  function closeConfirmModal() {
+    document.getElementById('confirm-modal').classList.remove('open');
+  }
+
   const API = '/api/whatsapp';
 
   function switchTab(tab) {
@@ -303,10 +333,11 @@
     });
   }
 
-  async function disconnect() {
-    if (!confirm('Disconnect WhatsApp?')) return;
-    await fetch(`${API}/disconnect`, { method: 'POST' });
-    await loadStatus();
+  function disconnect() {
+    showConfirm('Disconnect WhatsApp?', async () => {
+      await fetch(`${API}/disconnect`, { method: 'POST' });
+      await loadStatus();
+    }, { okText: 'Disconnect' });
   }
 
   loadStatus();
