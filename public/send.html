@@ -448,15 +448,57 @@
     } catch (e) { showError('Server error: ' + e.message); resetBtn(); }
   }
 
+<<<<<<< HEAD
+=======
+  let sseRetryCount   = 0;
+  let lastMsgAt       = 0;
+  let watchdogTimer   = null;
+
+>>>>>>> 01b74f8 (contacts)
   function connectSSE(jobId) {
     if (eventSource) eventSource.close();
     eventSource = new EventSource(`${API}/progress/${jobId}`);
+    lastMsgAt = Date.now();
     eventSource.onmessage = e => {
+<<<<<<< HEAD
+=======
+      sseRetryCount = 0; // any successful message means the connection is healthy again
+      lastMsgAt = Date.now();
+>>>>>>> 01b74f8 (contacts)
       const d = JSON.parse(e.data);
       updateProgress(d);
       if (d.status === 'done') { eventSource.close(); onDone(d); }
     };
+<<<<<<< HEAD
     eventSource.onerror = () => { eventSource.close(); };
+=======
+    startWatchdog();
+  }
+
+  // Some stalls never fire onerror at all — the stream just goes silent
+  // (a proxy drops it without a clean close, or a backgrounded mobile tab
+  // throttles timers/EventSource). The backend job doesn't care and keeps
+  // running, but the UI would sit frozen forever with no signal to recover
+  // from. This checks for staleness independently of onerror/onmessage and
+  // self-heals by polling the job's real status and forcing a fresh
+  // connection — no manual refresh required.
+  function startWatchdog() {
+    if (watchdogTimer) return;
+    watchdogTimer = setInterval(async () => {
+      if (!activeJobId) { clearInterval(watchdogTimer); watchdogTimer = null; return; }
+      if (Date.now() - lastMsgAt < 8000) return;
+      try {
+        const res  = await fetch(`${API}/status/${activeJobId}`);
+        const data = await res.json();
+        if (data.found) {
+          updateProgress(data);
+          if (data.status === 'done' || data.status === 'cancelled') { onDone(data); return; }
+        }
+      } catch (e) {}
+      lastMsgAt = Date.now(); // avoid re-firing every tick while the reconnect itself settles
+      connectSSE(activeJobId);
+    }, 4000);
+>>>>>>> 01b74f8 (contacts)
   }
 
   function updateProgress(d) {
@@ -501,6 +543,7 @@
     }
     localStorage.removeItem('wa_job_id');
     activeJobId = null;
+    if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
     resetBtn();
   }
 
