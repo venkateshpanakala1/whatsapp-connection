@@ -364,12 +364,9 @@
         const reason = (t.rejected_reason && t.rejected_reason !== 'NONE') ? t.rejected_reason : 'No reason provided by Meta.';
         statusNoteHtml = `<div class="tpl-status-note reason">${esc(reason)}</div>`;
       } else if (t.status === 'PENDING') {
-        statusNoteHtml = `<div class="tpl-status-note pending">Awaiting Meta's review — can't be edited until it's decided</div>`;
+        statusNoteHtml = `<div class="tpl-status-note pending">Awaiting Meta's review</div>`;
       }
-      // Meta only allows editing a template once it's REJECTED (or
-      // APPROVED/PAUSED) — not while still PENDING review, which returns a
-      // vague "Invalid parameter" error if attempted.
-      const editHtml = (t.status === 'REJECTED')
+      const editHtml = (t.status === 'PENDING' || t.status === 'REJECTED')
         ? `<button class="btn-edit-tpl" onclick="openEditModal('${t.name}')">✎ Edit &amp; resubmit</button>`
         : '';
 
