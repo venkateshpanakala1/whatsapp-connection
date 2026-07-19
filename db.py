@@ -223,6 +223,14 @@ def init_db():
         cur.execute("ALTER TABLE send_jobs ADD COLUMN IF NOT EXISTS header_media_url  TEXT;")
         cur.execute("ALTER TABLE send_jobs ADD COLUMN IF NOT EXISTS header_filename   VARCHAR(255);")
         cur.execute("ALTER TABLE send_jobs ADD COLUMN IF NOT EXISTS body_params       JSONB DEFAULT '[]'::jsonb;")
+        # Snapshot of the exact contacts targeted at job creation. Without
+        # this, resuming an interrupted job re-fetched "all contacts
+        # currently in this file" — if more contacts were imported into the
+        # same file name after the job started, resume would send to them
+        # too, letting `sent` exceed the original `total` (e.g. a job
+        # showing "1795 sent / 1692 total"). Resuming against this frozen
+        # list instead makes it immune to the file changing afterward.
+        cur.execute("ALTER TABLE send_jobs ADD COLUMN IF NOT EXISTS contacts_snapshot JSONB DEFAULT '[]'::jsonb;")
         conn.commit()
         cur.close()
         print('DB ready - whatsapp_connections table exists')

@@ -477,15 +477,30 @@
     } catch (e) { showError('Server error: ' + e.message); resetBtn(); }
   }
 
+  let sseRetryCount = 0;
+
   function connectSSE(jobId) {
     if (eventSource) eventSource.close();
     eventSource = new EventSource(`${API}/progress/${jobId}`);
     eventSource.onmessage = e => {
+      sseRetryCount = 0; // any successful message means the connection is healthy again
       const d = JSON.parse(e.data);
       updateProgress(d);
       if (d.status === 'done' || d.status === 'cancelled') { eventSource.close(); onDone(d); }
     };
-    eventSource.onerror = () => { eventSource.close(); };
+    // A dropped connection (network blip, proxy idle-timeout, etc.) does NOT
+    // mean the job stopped — the backend keeps running regardless. Without
+    // reconnecting here, the UI just freezes at its last-seen count forever,
+    // even though sends keep happening — only a manual refresh would ever
+    // catch it back up. Retry with a short delay instead, capped so a truly
+    // dead/finished job doesn't retry forever.
+    eventSource.onerror = () => {
+      eventSource.close();
+      if (!activeJobId) return; // job already finished/cancelled, nothing to reconnect to
+      sseRetryCount++;
+      if (sseRetryCount > 20) return;
+      setTimeout(() => { if (activeJobId) connectSSE(jobId); }, 2000);
+    };
   }
 
   function updateProgress(d) {
@@ -602,7 +617,23 @@
     } catch (e) {}
   }
   async function doLogout() {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch (e) {}
+    try { localStorage.clear(); } catch (e) {}
+    try { sessionStorage.clear(); } catch (e) {}
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch (e) {}
+    // Best-effort: the session cookie itself is HttpOnly and already cleared
+    // by the backend logout call above — this just sweeps any other cookies.
+    try {
+      document.cookie.split(';').forEach((c) => {
+        const name = c.split('=')[0].trim();
+        if (name) document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+      });
+    } catch (e) {}
     window.location.href = '/login';
   }
   loadSidebarUser();

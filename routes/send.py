@@ -65,18 +65,19 @@ def log_send(job_id, phone, name, template_name, status, user_id, wamid=None):
 
 def create_job(job_id, user_id, source_file, template_name, total, delay,
                 template_lang='en', header_format='', header_media_url='',
-                header_filename='', body_params=None):
+                header_filename='', body_params=None, contacts=None):
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO send_jobs
                 (id, user_id, source_file, template_name, status, total, delay,
-                 template_lang, header_format, header_media_url, header_filename, body_params)
-            VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s)
+                 template_lang, header_format, header_media_url, header_filename, body_params,
+                 contacts_snapshot)
+            VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s, %s)
         """, (job_id, user_id, source_file, template_name, total, delay,
               template_lang, header_format or None, header_media_url, header_filename,
-              json.dumps(body_params or [])))
+              json.dumps(body_params or []), json.dumps(contacts or [])))
         conn.commit()
         cur.close()
     finally:
@@ -245,7 +246,8 @@ def resume_pending_send_jobs():
         cur = conn.cursor()
         cur.execute("""
             SELECT id, user_id, source_file, template_name, delay,
-                   template_lang, header_format, header_media_url, header_filename, body_params
+                   template_lang, header_format, header_media_url, header_filename, body_params,
+                   contacts_snapshot
             FROM send_jobs WHERE status IN ('running', 'paused', 'pending')
         """)
         rows = cur.fetchall()
@@ -255,13 +257,20 @@ def resume_pending_send_jobs():
 
     resumed = 0
     for (job_id, user_id, source_file, template_name, delay,
-         template_lang, header_format, header_media_url, header_filename, body_params) in rows:
+         template_lang, header_format, header_media_url, header_filename, body_params,
+         contacts_snapshot) in rows:
         creds = get_wa_credentials(user_id)
         if not creds:
             set_job_status(job_id, 'cancelled')
             continue
 
-        all_contacts = get_contacts_by_file(source_file, user_id)
+        # Resume against the exact contacts captured when the job started,
+        # not "whatever is in this file now" — the file may have grown since
+        # (more imports under the same name), which would otherwise let a
+        # resumed job send to people never counted in its own `total`.
+        # Only falls back to the live file for jobs created before this
+        # snapshot column existed.
+        all_contacts = contacts_snapshot or get_contacts_by_file(source_file, user_id)
 
         conn = get_conn()
         try:
@@ -358,7 +367,7 @@ def start_send():
     create_job(job_id, user_id, source_file, template_name, len(contacts), delay,
                template_lang=template_lang, header_format=header_format,
                header_media_url=header_media_url, header_filename=header_filename,
-               body_params=body_params)
+               body_params=body_params, contacts=contacts)
 
     t = threading.Thread(
         target=send_worker,
