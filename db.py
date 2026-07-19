@@ -197,6 +197,25 @@ def init_db():
                 END IF;
             END $$;
         """)
+        # Change contacts UNIQUE(user_id, phone) → UNIQUE(user_id, phone, source_file)
+        # so the same number can belong to multiple uploaded files independently —
+        # previously importing a number into a 2nd file silently stole it away
+        # from whichever file it was in before, since only one row per
+        # (user_id, phone) could ever exist.
+        cur.execute("""
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'contacts_user_phone_unique') THEN
+                    ALTER TABLE contacts DROP CONSTRAINT contacts_user_phone_unique;
+                END IF;
+            END $$;
+        """)
+        cur.execute("""
+            DO $$ BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'contacts_user_phone_file_unique') THEN
+                    ALTER TABLE contacts ADD CONSTRAINT contacts_user_phone_file_unique UNIQUE(user_id, phone, source_file);
+                END IF;
+            END $$;
+        """)
         conn.commit()
         cur.close()
         print('DB ready - whatsapp_connections table exists')

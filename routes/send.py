@@ -60,8 +60,8 @@ def log_send(job_id, phone, name, template_name, status, user_id, wamid=None):
         except: pass
 
 
-# ── Job state lives in the DB (not a process-local dict) so pause/resume/
-# status/progress work no matter which gunicorn worker handles the request. ──
+# ── Job state lives in the DB (not a process-local dict) so cancel/status/
+# progress work no matter which gunicorn worker handles the request. ──
 
 def create_job(job_id, user_id, source_file, template_name, total, delay):
     conn = get_conn()
@@ -137,14 +137,6 @@ def is_cancelled(job_id):
     return not job or job['status'] == 'cancelled'
 
 
-def wait_if_paused(job_id):
-    while True:
-        job = get_job(job_id)
-        if not job or job['status'] != 'paused':
-            return
-        time.sleep(1)
-
-
 def build_template_components(header_format, header_media_url, header_filename, body_params, contact):
     """
     Build the `components` array WhatsApp requires on every send for templates
@@ -184,7 +176,6 @@ def send_worker(job_id, contacts, template_name, template_lang, creds, delay, us
     set_job_status(job_id, 'running')
 
     for contact in contacts:
-        wait_if_paused(job_id)
         if is_cancelled(job_id):
             return
 
@@ -225,7 +216,6 @@ def send_worker(job_id, contacts, template_name, template_lang, creds, delay, us
 
         elapsed = 0
         while elapsed < delay:
-            wait_if_paused(job_id)
             if is_cancelled(job_id):
                 return
             time.sleep(0.5)
@@ -313,33 +303,8 @@ def start_send():
     return jsonify({'success': True, 'job_id': job_id, 'total': len(contacts)})
 
 
-# POST /api/send/pause/<job_id>
-@send_bp.route('/pause/<job_id>', methods=['POST'])
-def pause_job(job_id):
-    job = get_job(job_id)
-    if not job:
-        return jsonify({'error': 'Job not found'}), 404
-    if job['status'] != 'running':
-        return jsonify({'error': f"Can't pause a job that is {job['status']}"}), 400
-    set_job_status(job_id, 'paused')
-    return jsonify({'success': True})
-
-
-# POST /api/send/resume/<job_id>
-@send_bp.route('/resume/<job_id>', methods=['POST'])
-def resume_job(job_id):
-    job = get_job(job_id)
-    if not job:
-        return jsonify({'error': 'Job not found'}), 404
-    if job['status'] != 'paused':
-        return jsonify({'error': f"Can't resume a job that is {job['status']}"}), 400
-    set_job_status(job_id, 'running')
-    return jsonify({'success': True})
-
-
-# POST /api/send/cancel/<job_id>  — stops the worker for good (unlike pause,
-# which just parks it); already-sent messages are untouched, remaining
-# contacts are simply never sent.
+# POST /api/send/cancel/<job_id>  — stops the worker for good; already-sent
+# messages are untouched, remaining contacts are simply never sent.
 @send_bp.route('/cancel/<job_id>', methods=['POST'])
 def cancel_job(job_id):
     job = get_job(job_id)

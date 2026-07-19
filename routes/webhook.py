@@ -194,6 +194,7 @@ def resolve_contact_name(cur, user_id, phone, profile_name=None):
         SELECT name FROM contacts
         WHERE user_id = %s
           AND RIGHT(regexp_replace(phone, '\\D', '', 'g'), 10) = RIGHT(regexp_replace(%s, '\\D', '', 'g'), 10)
+        ORDER BY updated_at DESC LIMIT 1
     """, (user_id, phone))
     row = cur.fetchone()
     if row and row[0]:
