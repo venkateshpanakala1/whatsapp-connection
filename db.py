@@ -231,6 +231,14 @@ def init_db():
         # showing "1795 sent / 1692 total"). Resuming against this frozen
         # list instead makes it immune to the file changing afterward.
         cur.execute("ALTER TABLE send_jobs ADD COLUMN IF NOT EXISTS contacts_snapshot JSONB DEFAULT '[]'::jsonb;")
+        # Fencing token: whichever thread holds the job's *current* token is
+        # the only one allowed to keep sending. Every claim (a fresh run, or
+        # any resume_pending_send_jobs() attempt on any later boot) stamps a
+        # brand new one, so a thread left over from an earlier crash-loop
+        # restart - even if it's somehow still alive - stops itself the next
+        # time it checks, instead of sending duplicate messages alongside a
+        # newer thread for the same job.
+        cur.execute("ALTER TABLE send_jobs ADD COLUMN IF NOT EXISTS worker_token VARCHAR(64);")
         conn.commit()
         cur.close()
         print('DB ready - whatsapp_connections table exists')

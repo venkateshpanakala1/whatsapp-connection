@@ -66,6 +66,7 @@ def log_send(job_id, phone, name, template_name, status, user_id, wamid=None):
 def create_job(job_id, user_id, source_file, template_name, total, delay,
                 template_lang='en', header_format='', header_media_url='',
                 header_filename='', body_params=None, contacts=None):
+    worker_token = str(uuid.uuid4())
     conn = get_conn()
     try:
         cur = conn.cursor()
@@ -73,15 +74,30 @@ def create_job(job_id, user_id, source_file, template_name, total, delay,
             INSERT INTO send_jobs
                 (id, user_id, source_file, template_name, status, total, delay,
                  template_lang, header_format, header_media_url, header_filename, body_params,
-                 contacts_snapshot)
-            VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s, %s)
+                 contacts_snapshot, worker_token)
+            VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (job_id, user_id, source_file, template_name, total, delay,
               template_lang, header_format or None, header_media_url, header_filename,
-              json.dumps(body_params or []), json.dumps(contacts or [])))
+              json.dumps(body_params or []), json.dumps(contacts or []), worker_token))
         conn.commit()
         cur.close()
     finally:
         put_conn(conn)
+    return worker_token
+
+
+def stamp_worker_token(job_id):
+    """Issues a fresh worker_token for a job being (re)claimed and returns it."""
+    worker_token = str(uuid.uuid4())
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute('UPDATE send_jobs SET worker_token = %s WHERE id = %s', (worker_token, job_id))
+        conn.commit()
+        cur.close()
+    finally:
+        put_conn(conn)
+    return worker_token
 
 
 def set_job_status(job_id, status):
@@ -124,7 +140,7 @@ def get_job(job_id):
     try:
         cur = conn.cursor()
         cur.execute("""
-            SELECT status, current, total, sent, failed, errors
+            SELECT status, current, total, sent, failed, errors, worker_token
             FROM send_jobs WHERE id = %s
         """, (job_id,))
         row = cur.fetchone()
@@ -133,7 +149,8 @@ def get_job(job_id):
             return None
         return {
             'status': row[0], 'current': row[1], 'total': row[2],
-            'sent': row[3], 'failed': row[4], 'errors': row[5] or []
+            'sent': row[3], 'failed': row[4], 'errors': row[5] or [],
+            'worker_token': row[6]
         }
     finally:
         put_conn(conn)
@@ -142,6 +159,30 @@ def get_job(job_id):
 def is_cancelled(job_id):
     job = get_job(job_id)
     return not job or job['status'] == 'cancelled'
+
+
+def should_stop_worker(job_id, worker_token):
+    """
+    True if this thread should stop: the job was cancelled, or a newer claim
+    has superseded this thread's token. The token check exists because a
+    crash-loop (several restarts in quick succession, like during the recent
+    deploy incident) can leave more than one thread alive for the same job —
+    each restart's resume_pending_send_jobs() legitimately saw the job still
+    marked 'running' (a prior thread died without updating anything) and
+    attached a new one, but if an older thread wasn't actually dead yet, both
+    end up sending concurrently: real duplicate WhatsApp messages, and the
+    job's own sent/current count overshooting its total (exactly what
+    happened when a job hit 616 sent against a total of 462). Every claim —
+    a fresh run or any resume — stamps a brand new token, so only the most
+    recently claimed thread's messages match and everything older stops
+    itself on its very next check.
+    """
+    job = get_job(job_id)
+    if not job or job['status'] == 'cancelled':
+        return True
+    if worker_token and job['worker_token'] != worker_token:
+        return True
+    return False
 
 
 def build_template_components(header_format, header_media_url, header_filename, body_params, contact):
@@ -179,11 +220,12 @@ def build_template_components(header_format, header_media_url, header_filename, 
 
 
 def send_worker(job_id, contacts, template_name, template_lang, creds, delay, user_id,
-                 header_format=None, header_media_url='', header_filename='', body_params=None):
+                 header_format=None, header_media_url='', header_filename='', body_params=None,
+                 worker_token=None):
     set_job_status(job_id, 'running')
 
     for contact in contacts:
-        if is_cancelled(job_id):
+        if should_stop_worker(job_id, worker_token):
             return
 
         phone = contact['phone']
@@ -223,7 +265,7 @@ def send_worker(job_id, contacts, template_name, template_lang, creds, delay, us
 
         elapsed = 0
         while elapsed < delay:
-            if is_cancelled(job_id):
+            if should_stop_worker(job_id, worker_token):
                 return
             time.sleep(0.5)
             elapsed += 0.5
@@ -247,6 +289,16 @@ def resume_pending_send_jobs():
     SELECT here would let every worker see the same "still running" job and
     each attach its own sender thread, actually double-sending messages to
     WhatsApp for whichever contacts were still remaining at restart time.
+
+    Also reclaims jobs stuck in 'resuming' for more than 30 seconds. A job
+    normally passes through 'resuming' only for an instant - the winning
+    worker flips it straight to 'running' as soon as its thread starts. But
+    if the process crashes in that tiny window (e.g. during a rapid
+    crash-loop), the job is orphaned at 'resuming' forever, since that status
+    is deliberately excluded from the main WHERE clause above to prevent two
+    workers claiming the same job at the same boot. A claim that's still
+    legitimately in flight resolves in milliseconds, so anything still
+    sitting at 'resuming' after 30s is definitely abandoned, not a live race.
     """
     conn = get_conn()
     try:
@@ -254,6 +306,7 @@ def resume_pending_send_jobs():
         cur.execute("""
             UPDATE send_jobs SET status = 'resuming', updated_at = NOW()
             WHERE status IN ('running', 'paused', 'pending')
+               OR (status = 'resuming' AND updated_at < NOW() - INTERVAL '30 seconds')
             RETURNING id, user_id, source_file, template_name, delay,
                       template_lang, header_format, header_media_url, header_filename, body_params,
                       contacts_snapshot
@@ -295,6 +348,11 @@ def resume_pending_send_jobs():
             set_job_status(job_id, 'done')
             continue
 
+        # Fresh token per resume attempt — see should_stop_worker()'s
+        # docstring. Whatever thread was attached before this boot (if any
+        # is somehow still alive) no longer matches and stops itself.
+        worker_token = stamp_worker_token(job_id)
+
         threading.Thread(
             target=send_worker,
             args=(job_id, remaining, template_name, template_lang or 'en', creds, delay, user_id),
@@ -303,6 +361,7 @@ def resume_pending_send_jobs():
                 'header_media_url': header_media_url or '',
                 'header_filename':  header_filename or '',
                 'body_params':      body_params or [],
+                'worker_token':     worker_token,
             },
             daemon=True
         ).start()
@@ -373,7 +432,7 @@ def start_send():
         return jsonify({'error': f'No contacts found in "{source_file}"'}), 400
 
     job_id = str(uuid.uuid4())
-    create_job(job_id, user_id, source_file, template_name, len(contacts), delay,
+    worker_token = create_job(job_id, user_id, source_file, template_name, len(contacts), delay,
                template_lang=template_lang, header_format=header_format,
                header_media_url=header_media_url, header_filename=header_filename,
                body_params=body_params, contacts=contacts)
@@ -386,6 +445,7 @@ def start_send():
             'header_media_url': header_media_url,
             'header_filename':  header_filename,
             'body_params':      body_params,
+            'worker_token':     worker_token,
         },
         daemon=True
     )
