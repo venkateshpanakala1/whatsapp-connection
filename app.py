@@ -8,7 +8,7 @@ from db import init_db
 from routes.whatsapp import whatsapp_bp
 from routes.templates import templates_bp
 from routes.contacts import contacts_bp
-from routes.send import send_bp
+from routes.send import send_bp, resume_pending_send_jobs
 from routes.webhook import webhook_bp
 from routes.replies import replies_bp, resume_pending_counter_replies, backfill_reply_contact_names
 from routes.auth import auth_bp
@@ -33,6 +33,7 @@ app.register_blueprint(push_bp,      url_prefix='/api/push')
 init_db()
 backfill_reply_contact_names()
 resume_pending_counter_replies()
+resume_pending_send_jobs()
 
 
 def login_required(view):

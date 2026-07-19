@@ -63,14 +63,20 @@ def log_send(job_id, phone, name, template_name, status, user_id, wamid=None):
 # ── Job state lives in the DB (not a process-local dict) so cancel/status/
 # progress work no matter which gunicorn worker handles the request. ──
 
-def create_job(job_id, user_id, source_file, template_name, total, delay):
+def create_job(job_id, user_id, source_file, template_name, total, delay,
+                template_lang='en', header_format='', header_media_url='',
+                header_filename='', body_params=None):
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO send_jobs (id, user_id, source_file, template_name, status, total, delay)
-            VALUES (%s, %s, %s, %s, 'pending', %s, %s)
-        """, (job_id, user_id, source_file, template_name, total, delay))
+            INSERT INTO send_jobs
+                (id, user_id, source_file, template_name, status, total, delay,
+                 template_lang, header_format, header_media_url, header_filename, body_params)
+            VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s)
+        """, (job_id, user_id, source_file, template_name, total, delay,
+              template_lang, header_format or None, header_media_url, header_filename,
+              json.dumps(body_params or [])))
         conn.commit()
         cur.close()
     finally:
@@ -224,6 +230,70 @@ def send_worker(job_id, contacts, template_name, template_lang, creds, delay, us
     set_job_status(job_id, 'done')
 
 
+def resume_pending_send_jobs():
+    """
+    Re-attach a worker thread for any bulk-send job that was still
+    running/paused when the process last stopped (e.g. a deploy or crash) —
+    the background thread dies instantly with the old process, but the job's
+    own DB row survives, otherwise sitting stuck forever showing "Running"
+    with the progress frozen at whatever count it last reached. Skips
+    contacts already logged (sent or failed) for this job, so it continues
+    from where it left off instead of re-sending everyone from scratch.
+    """
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, user_id, source_file, template_name, delay,
+                   template_lang, header_format, header_media_url, header_filename, body_params
+            FROM send_jobs WHERE status IN ('running', 'paused', 'pending')
+        """)
+        rows = cur.fetchall()
+        cur.close()
+    finally:
+        put_conn(conn)
+
+    resumed = 0
+    for (job_id, user_id, source_file, template_name, delay,
+         template_lang, header_format, header_media_url, header_filename, body_params) in rows:
+        creds = get_wa_credentials(user_id)
+        if not creds:
+            set_job_status(job_id, 'cancelled')
+            continue
+
+        all_contacts = get_contacts_by_file(source_file, user_id)
+
+        conn = get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute('SELECT DISTINCT phone FROM send_logs WHERE job_id = %s', (job_id,))
+            already_done = {r[0] for r in cur.fetchall()}
+            cur.close()
+        finally:
+            put_conn(conn)
+
+        remaining = [c for c in all_contacts if c['phone'] not in already_done]
+        if not remaining:
+            set_job_status(job_id, 'done')
+            continue
+
+        threading.Thread(
+            target=send_worker,
+            args=(job_id, remaining, template_name, template_lang or 'en', creds, delay, user_id),
+            kwargs={
+                'header_format':    header_format or '',
+                'header_media_url': header_media_url or '',
+                'header_filename':  header_filename or '',
+                'body_params':      body_params or [],
+            },
+            daemon=True
+        ).start()
+        resumed += 1
+
+    if resumed:
+        print(f'[send] resumed {resumed} in-flight bulk-send job(s)')
+
+
 # GET /api/send/templates
 @send_bp.route('/templates', methods=['GET'])
 def get_templates():
@@ -285,7 +355,10 @@ def start_send():
         return jsonify({'error': f'No contacts found in "{source_file}"'}), 400
 
     job_id = str(uuid.uuid4())
-    create_job(job_id, user_id, source_file, template_name, len(contacts), delay)
+    create_job(job_id, user_id, source_file, template_name, len(contacts), delay,
+               template_lang=template_lang, header_format=header_format,
+               header_media_url=header_media_url, header_filename=header_filename,
+               body_params=body_params)
 
     t = threading.Thread(
         target=send_worker,

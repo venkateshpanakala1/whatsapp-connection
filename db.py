@@ -182,18 +182,15 @@ def init_db():
         # Tenant name, captured when an admin registers a new tenant account.
         cur.execute("ALTER TABLE users                  ADD COLUMN IF NOT EXISTS name VARCHAR(200);")
         cur.execute("ALTER TABLE counter_replies       ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")
-        # Change contacts UNIQUE(phone) → UNIQUE(user_id, phone) so two users can share same number
+        # Change contacts UNIQUE(phone) → UNIQUE(user_id, phone) so two users can share same number.
+        # (Superseded below by UNIQUE(user_id, phone, source_file) — this old
+        # constraint is only ever dropped now, never recreated, since
+        # recreating it on every boot would conflict with the newer, looser
+        # one once any user legitimately has the same number in 2+ files.)
         cur.execute("""
             DO $$ BEGIN
                 IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'contacts_phone_key') THEN
                     ALTER TABLE contacts DROP CONSTRAINT contacts_phone_key;
-                END IF;
-            END $$;
-        """)
-        cur.execute("""
-            DO $$ BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'contacts_user_phone_unique') THEN
-                    ALTER TABLE contacts ADD CONSTRAINT contacts_user_phone_unique UNIQUE(user_id, phone);
                 END IF;
             END $$;
         """)
@@ -216,11 +213,23 @@ def init_db():
                 END IF;
             END $$;
         """)
+        # A bulk-send job's own template language/header/body-variable choices
+        # weren't persisted anywhere — only template_name and delay were. That
+        # meant a job interrupted by a process restart (deploy, crash) could
+        # never be safely resumed, since the exact send parameters were gone.
+        # Storing them here is what makes resume_pending_send_jobs() possible.
+        cur.execute("ALTER TABLE send_jobs ADD COLUMN IF NOT EXISTS template_lang     VARCHAR(10) DEFAULT 'en';")
+        cur.execute("ALTER TABLE send_jobs ADD COLUMN IF NOT EXISTS header_format     VARCHAR(20);")
+        cur.execute("ALTER TABLE send_jobs ADD COLUMN IF NOT EXISTS header_media_url  TEXT;")
+        cur.execute("ALTER TABLE send_jobs ADD COLUMN IF NOT EXISTS header_filename   VARCHAR(255);")
+        cur.execute("ALTER TABLE send_jobs ADD COLUMN IF NOT EXISTS body_params       JSONB DEFAULT '[]'::jsonb;")
         conn.commit()
         cur.close()
         print('DB ready - whatsapp_connections table exists')
     except Exception as e:
         print(f'DB init failed: {e}')
+        try: conn.rollback()
+        except Exception: pass
         raise
     finally:
         put_conn(conn)
