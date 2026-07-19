@@ -111,8 +111,8 @@ def import_contacts():
             cur.execute("""
                 INSERT INTO contacts (user_id, name, phone, source_file)
                 VALUES (%s, %s, %s, %s)
-                ON CONFLICT (user_id, phone, source_file) DO UPDATE
-                    SET name = EXCLUDED.name, updated_at = NOW()
+                ON CONFLICT (user_id, phone) DO UPDATE
+                    SET name = EXCLUDED.name, source_file = EXCLUDED.source_file, updated_at = NOW()
             """, (user_id, name, phone, source_file))
             saved += 1
         conn.commit()

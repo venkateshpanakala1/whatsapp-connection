@@ -23,30 +23,6 @@ def verify_token(access_token, waba_id):
         return {'valid': False, 'error': str(e)}
 
 
-def subscribe_app_to_waba(access_token, waba_id):
-    """
-    Verifying a token only proves it's valid — it does NOT make Meta start
-    sending webhook events (incoming messages, delivery/read statuses) for
-    this WABA. That requires a separate, explicit subscription call per WABA.
-    Without it, the app-level webhook URL can be perfectly configured and
-    verified and still never receive a single event for this number — sends
-    keep working fine since they don't need a subscription, only replies and
-    statuses are affected, which is exactly the confusing part.
-    """
-    try:
-        res = http.post(
-            f'{META_API}/{waba_id}/subscribed_apps',
-            headers={'Authorization': f'Bearer {access_token}'},
-            timeout=10
-        )
-        data = res.json()
-        if data.get('success'):
-            return {'ok': True}
-        return {'ok': False, 'error': data.get('error', {}).get('message', 'Unknown error')}
-    except Exception as e:
-        return {'ok': False, 'error': str(e)}
-
-
 # GET /api/whatsapp/status
 @whatsapp_bp.route('/status', methods=['GET'])
 def status():
@@ -95,8 +71,6 @@ def connect():
     if not check['valid']:
         return jsonify({'error': f"Token verification failed: {check['error']}"}), 400
 
-    subscription = subscribe_app_to_waba(access_token, waba_id)
-
     conn = get_conn()
     try:
         cur = conn.cursor()
@@ -121,16 +95,7 @@ def connect():
 
         conn.commit()
         cur.close()
-
-        if not subscription['ok']:
-            # Don't fail the connection over this — the number is still usable
-            # for sending — but make it very visible that replies won't work
-            # until the subscription succeeds (usually a permissions issue on
-            # the token: needs whatsapp_business_management).
-            msg += (f" — but webhook subscription failed ({subscription['error']}), "
-                    "so incoming replies won't arrive until this is fixed. Try reconnecting.")
-
-        return jsonify({'success': True, 'message': msg, 'webhook_subscribed': subscription['ok']})
+        return jsonify({'success': True, 'message': msg})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:

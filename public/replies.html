@@ -7,8 +7,6 @@
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#075e54">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="icon" type="image/png" href="/favicon-64.png">
-  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <script src="/pwa.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -263,10 +261,10 @@
 
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <div class="brand-icon"><img src="/icon-192.png" alt="V7 logo"></div>
+    <div class="brand-icon"><img src="/v7.jpeg" alt="V7 logo" /></div>
     <div class="brand-text">
       <div class="app-name">V7</div>
-      <div class="app-sub">Stress2Solutions</div>
+      <div class="app-sub">stress2solution</div>
     </div>
   </div>
   <nav class="sidebar-nav">
@@ -276,7 +274,6 @@
     <a href="/templates" class="nav-item"><span class="nav-icon">📋</span> Templates</a>
     <a href="/contacts"  class="nav-item"><span class="nav-icon">👥</span> Contacts</a>
     <a href="/send"      class="nav-item"><span class="nav-icon">📤</span> Bulk Send</a>
-    <a href="/history"   class="nav-item"><span class="nav-icon">📊</span> History</a>
     <a href="/replies"   class="nav-item active"><span class="nav-icon">💬</span> Replies</a>
   </nav>
   <div class="sidebar-footer">
@@ -790,32 +787,15 @@
       const res  = await fetch('/api/auth/me', { credentials: 'same-origin' });
       const data = await res.json();
       if (data.logged_in) {
-        const displayName = data.name || data.email;
-        document.getElementById('sidebar-email').textContent = displayName;
+        document.getElementById('sidebar-email').textContent = data.email;
         document.getElementById('sidebar-user').style.display = 'block';
-        document.getElementById('hdr-email').textContent = displayName;
-        document.getElementById('hdr-avatar').textContent = displayName.charAt(0).toUpperCase();
+        document.getElementById('hdr-email').textContent = data.email;
+        document.getElementById('hdr-avatar').textContent = data.email.charAt(0).toUpperCase();
       }
     } catch (e) {}
   }
   async function doLogout() {
-    try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch (e) {}
-    try { localStorage.clear(); } catch (e) {}
-    try { sessionStorage.clear(); } catch (e) {}
-    try {
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-    } catch (e) {}
-    // Best-effort: the session cookie itself is HttpOnly and already cleared
-    // by the backend logout call above — this just sweeps any other cookies.
-    try {
-      document.cookie.split(';').forEach((c) => {
-        const name = c.split('=')[0].trim();
-        if (name) document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
-      });
-    } catch (e) {}
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
     window.location.href = '/login';
   }
   loadSidebarUser();
