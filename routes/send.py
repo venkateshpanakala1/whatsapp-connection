@@ -43,14 +43,14 @@ def get_contacts_by_file(source_file, user_id):
         put_conn(conn)
 
 
-def log_send(job_id, phone, name, template_name, status, user_id):
+def log_send(job_id, phone, name, template_name, status, user_id, wamid=None):
     try:
         conn = get_conn()
         cur  = conn.cursor()
         cur.execute("""
-            INSERT INTO send_logs (user_id, job_id, phone, name, template_name, status)
-            VALUES (%s, %s, %s, %s, %s, %s)
-        """, (user_id, job_id, phone, name or '', template_name, status))
+            INSERT INTO send_logs (user_id, job_id, phone, name, template_name, status, wamid)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (user_id, job_id, phone, name or '', template_name, status, wamid))
         conn.commit()
         cur.close()
     except Exception:
@@ -60,17 +60,24 @@ def log_send(job_id, phone, name, template_name, status, user_id):
         except: pass
 
 
-# ── Job state lives in the DB (not a process-local dict) so pause/resume/
-# status/progress work no matter which gunicorn worker handles the request. ──
+# ── Job state lives in the DB (not a process-local dict) so cancel/status/
+# progress work no matter which gunicorn worker handles the request. ──
 
-def create_job(job_id, user_id, source_file, template_name, total, delay):
+def create_job(job_id, user_id, source_file, template_name, total, delay,
+                template_lang='en', header_format='', header_media_url='',
+                header_filename='', body_params=None, contacts=None):
     conn = get_conn()
     try:
         cur = conn.cursor()
         cur.execute("""
-            INSERT INTO send_jobs (id, user_id, source_file, template_name, status, total, delay)
-            VALUES (%s, %s, %s, %s, 'pending', %s, %s)
-        """, (job_id, user_id, source_file, template_name, total, delay))
+            INSERT INTO send_jobs
+                (id, user_id, source_file, template_name, status, total, delay,
+                 template_lang, header_format, header_media_url, header_filename, body_params,
+                 contacts_snapshot)
+            VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s, %s)
+        """, (job_id, user_id, source_file, template_name, total, delay,
+              template_lang, header_format or None, header_media_url, header_filename,
+              json.dumps(body_params or []), json.dumps(contacts or [])))
         conn.commit()
         cur.close()
     finally:
@@ -132,12 +139,9 @@ def get_job(job_id):
         put_conn(conn)
 
 
-def wait_if_paused(job_id):
-    while True:
-        job = get_job(job_id)
-        if not job or job['status'] != 'paused':
-            return
-        time.sleep(1)
+def is_cancelled(job_id):
+    job = get_job(job_id)
+    return not job or job['status'] == 'cancelled'
 
 
 def build_template_components(header_format, header_media_url, header_filename, body_params, contact):
@@ -179,7 +183,8 @@ def send_worker(job_id, contacts, template_name, template_lang, creds, delay, us
     set_job_status(job_id, 'running')
 
     for contact in contacts:
-        wait_if_paused(job_id)
+        if is_cancelled(job_id):
+            return
 
         phone = contact['phone']
         name  = contact.get('name', '')
@@ -210,22 +215,22 @@ def send_worker(job_id, contacts, template_name, template_lang, creds, delay, us
                 log_send(job_id, phone, name, template_name, 'failed', user_id)
             else:
                 bump_job_progress(job_id, True)
-                log_send(job_id, phone, name, template_name, 'sent', user_id)
+                wamid = (data.get('messages') or [{}])[0].get('id', '')
+                log_send(job_id, phone, name, template_name, 'sent', user_id, wamid)
         except Exception:
             bump_job_progress(job_id, False, f"{phone}: request failed")
             log_send(job_id, phone, name, template_name, 'failed', user_id)
 
         elapsed = 0
         while elapsed < delay:
-            wait_if_paused(job_id)
+            if is_cancelled(job_id):
+                return
             time.sleep(0.5)
             elapsed += 0.5
 
     set_job_status(job_id, 'done')
 
 
-<<<<<<< HEAD
-=======
 def resume_pending_send_jobs():
     """
     Re-attach a worker thread for any bulk-send job that was still
@@ -307,7 +312,6 @@ def resume_pending_send_jobs():
         print(f'[send] resumed {resumed} in-flight bulk-send job(s)')
 
 
->>>>>>> 01b74f8 (contacts)
 # GET /api/send/templates
 @send_bp.route('/templates', methods=['GET'])
 def get_templates():
@@ -369,7 +373,10 @@ def start_send():
         return jsonify({'error': f'No contacts found in "{source_file}"'}), 400
 
     job_id = str(uuid.uuid4())
-    create_job(job_id, user_id, source_file, template_name, len(contacts), delay)
+    create_job(job_id, user_id, source_file, template_name, len(contacts), delay,
+               template_lang=template_lang, header_format=header_format,
+               header_media_url=header_media_url, header_filename=header_filename,
+               body_params=body_params, contacts=contacts)
 
     t = threading.Thread(
         target=send_worker,
@@ -387,21 +394,16 @@ def start_send():
     return jsonify({'success': True, 'job_id': job_id, 'total': len(contacts)})
 
 
-# POST /api/send/pause/<job_id>
-@send_bp.route('/pause/<job_id>', methods=['POST'])
-def pause_job(job_id):
-    if not get_job(job_id):
+# POST /api/send/cancel/<job_id>  — stops the worker for good; already-sent
+# messages are untouched, remaining contacts are simply never sent.
+@send_bp.route('/cancel/<job_id>', methods=['POST'])
+def cancel_job(job_id):
+    job = get_job(job_id)
+    if not job:
         return jsonify({'error': 'Job not found'}), 404
-    set_job_status(job_id, 'paused')
-    return jsonify({'success': True})
-
-
-# POST /api/send/resume/<job_id>
-@send_bp.route('/resume/<job_id>', methods=['POST'])
-def resume_job(job_id):
-    if not get_job(job_id):
-        return jsonify({'error': 'Job not found'}), 404
-    set_job_status(job_id, 'running')
+    if job['status'] in ('done', 'cancelled'):
+        return jsonify({'error': f"Job is already {job['status']}"}), 400
+    set_job_status(job_id, 'cancelled')
     return jsonify({'success': True})
 
 
@@ -414,6 +416,61 @@ def job_status(job_id):
     return jsonify({'found': True, **job})
 
 
+# GET /api/send/history  — recent past bulk-send runs for this user, with
+# delivered/read/replied engagement counts alongside the raw sent/failed ones.
+@send_bp.route('/history', methods=['GET'])
+def send_history():
+    user_id = session.get('user_id')
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT
+                sj.id, sj.source_file, sj.template_name, sj.status, sj.total,
+                sj.sent, sj.failed, sj.created_at, sj.updated_at, sj.delay, sj.errors,
+                COUNT(sl.id) FILTER (WHERE sl.delivered_at IS NOT NULL)      AS delivered_count,
+                COUNT(sl.id) FILTER (WHERE sl.read_at IS NOT NULL)          AS read_count,
+                COUNT(DISTINCT sl.phone) FILTER (WHERE EXISTS (
+                    SELECT 1 FROM replies r
+                    WHERE r.user_id = sj.user_id AND r.direction = 'in'
+                      AND RIGHT(regexp_replace(r.from_phone, '\\D', '', 'g'), 10)
+                        = RIGHT(regexp_replace(sl.phone, '\\D', '', 'g'), 10)
+                      AND r.received_at > sl.sent_at
+                ))                                                          AS replied_count
+            FROM send_jobs sj
+            LEFT JOIN send_logs sl ON sl.job_id = sj.id AND sl.status = 'sent'
+            WHERE sj.user_id = %s
+            GROUP BY sj.id
+            ORDER BY sj.created_at DESC LIMIT 20
+        """, (user_id,))
+        rows = cur.fetchall()
+        cur.close()
+        jobs = [
+            {
+                'id':              r[0],
+                'source_file':     r[1],
+                'template_name':   r[2],
+                'status':          r[3],
+                'total':           r[4],
+                'sent':            r[5],
+                'failed':          r[6],
+                'created_at':      (r[7].isoformat() + 'Z') if r[7] else '',
+                'updated_at':      (r[8].isoformat() + 'Z') if r[8] else '',
+                'delay':           r[9],
+                'errors':          r[10] or [],
+                'delivered_count': r[11],
+                'read_count':      r[12],
+                'replied_count':   r[13],
+            }
+            for r in rows
+        ]
+        return jsonify({'success': True, 'jobs': jobs})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        put_conn(conn)
+
+
 # GET /api/send/progress/<job_id>  — SSE stream
 @send_bp.route('/progress/<job_id>')
 def progress(job_id):
@@ -424,7 +481,7 @@ def progress(job_id):
         while True:
             job = get_job(job_id) or {}
             yield f"data: {json.dumps(job)}\n\n"
-            if job.get('status') == 'done':
+            if job.get('status') in ('done', 'cancelled'):
                 break
             time.sleep(1)
 
