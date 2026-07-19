@@ -261,7 +261,14 @@ def edit_template():
         )
         data = res.json()
         if 'error' in data:
-            return jsonify({'error': data['error']['message']}), 400
+            err = data['error']
+            # Meta's top-level `message` is often a generic "Invalid parameter"
+            # with the actually useful explanation buried in error_user_msg or
+            # error_data.details — surface whichever is most specific instead
+            # of just the generic one, and log the raw error for debugging.
+            detail = err.get('error_user_msg') or err.get('error_data', {}).get('details') or err.get('message')
+            print(f'[templates] edit failed for template_id={template_id}: {err}')
+            return jsonify({'error': detail}), 400
         return jsonify({'success': True, 'message': 'Template updated and resubmitted for review'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
