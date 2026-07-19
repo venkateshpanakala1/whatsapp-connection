@@ -98,11 +98,43 @@ def receive():
                             daemon=True
                         ).start()
 
+                # ── Status callbacks for messages we sent (bulk send + counter-
+                # replies) — Meta reports each one's lifecycle as sent → delivered
+                # → read (or failed) via these, keyed by the message id we got
+                # back when we sent it. This is what powers the "delivered"/"read"
+                # counts in the Bulk Send analytics — without it we'd only ever
+                # know a message left our side, never whether it arrived or was seen.
+                for status_event in value.get('statuses', []):
+                    update_send_log_status(status_event.get('id', ''), status_event.get('status', ''))
+
     except Exception as e:
         print(f'[WEBHOOK] error: {e}')
         import traceback; traceback.print_exc()
 
     return 'OK', 200
+
+
+def update_send_log_status(wamid, status):
+    """Records delivered/read timestamps on the matching send_logs row.
+    'sent' is already set when we log the send itself; 'failed' status
+    callbacks are ignored here since a failed *send* is already logged as
+    such at send time — this only tracks what happens after a successful send."""
+    if not wamid or status not in ('delivered', 'read'):
+        return
+    column = 'delivered_at' if status == 'delivered' else 'read_at'
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(f"""
+            UPDATE send_logs SET {column} = NOW()
+            WHERE wamid = %s AND {column} IS NULL
+        """, (wamid,))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        print(f'[WEBHOOK] update_send_log_status error: {e}')
+    finally:
+        put_conn(conn)
 
 
 def lookup_user_by_phone_number_id(phone_number_id):
@@ -162,6 +194,7 @@ def resolve_contact_name(cur, user_id, phone, profile_name=None):
         SELECT name FROM contacts
         WHERE user_id = %s
           AND RIGHT(regexp_replace(phone, '\\D', '', 'g'), 10) = RIGHT(regexp_replace(%s, '\\D', '', 'g'), 10)
+        ORDER BY updated_at DESC LIMIT 1
     """, (user_id, phone))
     row = cur.fetchone()
     if row and row[0]:

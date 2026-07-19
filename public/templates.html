@@ -7,6 +7,8 @@
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#075e54">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="/favicon-64.png">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <script src="/pwa.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -87,10 +89,10 @@
 
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <div class="brand-icon"><img src="/v7.jpeg" alt="V7 logo" /></div>
+    <div class="brand-icon"><img src="/icon-192.png" alt="V7 logo"></div>
     <div class="brand-text">
       <div class="app-name">V7</div>
-      <div class="app-sub">stress2solution</div>
+      <div class="app-sub">Stress2Solutions</div>
     </div>
   </div>
   <nav class="sidebar-nav">
@@ -100,6 +102,7 @@
     <a href="/templates" class="nav-item active"><span class="nav-icon">📋</span> Templates</a>
     <a href="/contacts"  class="nav-item"><span class="nav-icon">👥</span> Contacts</a>
     <a href="/send"      class="nav-item"><span class="nav-icon">📤</span> Bulk Send</a>
+    <a href="/history"   class="nav-item"><span class="nav-icon">📊</span> History</a>
     <a href="/replies"   class="nav-item"><span class="nav-icon">💬</span> Replies</a>
   </nav>
   <div class="sidebar-footer">
@@ -131,103 +134,115 @@
     </div>
   </div>
 
-  <!-- Recent templates -->
+  <!-- Templates -->
   <div class="card card-wide">
     <div class="card-hdr">
       <div>
-        <div class="card-title">Recent Templates <span style="font-size:11px;color:var(--text-3);font-weight:400">(last 2)</span></div>
+        <div class="card-title">Templates <span id="tpl-count-label" style="font-size:11px;color:var(--text-3);font-weight:400"></span></div>
       </div>
       <button class="btn btn-outline btn-sm" onclick="loadTemplates()">↻ Refresh</button>
     </div>
-    <div id="templates-list"><div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading templates...</div></div></div>
-  </div>
-
-  <!-- Create template -->
-  <div class="card card-wide">
-    <div class="card-hdr">
-      <div class="card-title">Create New Template</div>
+    <div class="tabs-wrap card-sm" style="max-width:400px">
+      <div class="tab active" id="tpl-tab-recent" onclick="switchTplTab('recent')">Create Template</div>
+      <div class="tab" id="tpl-tab-all" onclick="switchTplTab('all')">All Templates</div>
     </div>
+    <div class="card-tabs card-sm" style="max-width:none">
 
-    <div class="row-2">
-      <div class="form-group">
-        <label>Template Name</label>
-        <input type="text" id="tpl-name" placeholder="e.g. welcome_message" oninput="sanitizeName(this)" />
-        <p class="hint">Lowercase letters, numbers and underscores only</p>
+      <!-- Recent Templates + Create Template -->
+      <div id="panel-recent" class="tab-panel active">
+        <div id="templates-list"><div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading templates...</div></div></div>
+
+        <div class="card-title" style="margin:28px 0 16px">Create New Template</div>
+
+        <div class="row-2">
+          <div class="form-group">
+            <label>Template Name</label>
+            <input type="text" id="tpl-name" placeholder="e.g. welcome_message" oninput="sanitizeName(this)" />
+            <p class="hint">Lowercase letters, numbers and underscores only</p>
+          </div>
+          <div class="form-group">
+            <label>Category</label>
+            <select id="tpl-category">
+              <option value="MARKETING">Marketing</option>
+              <option value="UTILITY">Utility</option>
+              <option value="AUTHENTICATION">Authentication</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="row-2">
+          <div class="form-group">
+            <label>Language</label>
+            <select id="tpl-language">
+              <option value="en">English</option>
+              <option value="en_US">English (US)</option>
+              <option value="hi">Hindi</option>
+              <option value="ta">Tamil</option>
+              <option value="te">Telugu</option>
+              <option value="ml">Malayalam</option>
+              <option value="kn">Kannada</option>
+              <option value="mr">Marathi</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Header Type</label>
+            <select id="tpl-header-type" onchange="onHeaderTypeChange(this.value)">
+              <option value="NONE">No Header (Text only)</option>
+              <option value="IMAGE">Image</option>
+              <option value="DOCUMENT">PDF / Document</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- File upload zone -->
+        <div class="upload-area" id="upload-area"
+             onclick="document.getElementById('file-input').click()"
+             ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
+          <input type="file" id="file-input" onchange="onFileSelected(this)" />
+          <div class="upload-icon" id="upload-icon">📁</div>
+          <div class="upload-text">
+            Drag &amp; drop or <strong>browse</strong> to upload<br/>
+            <span id="upload-hint" style="font-size:11px;color:var(--text-3)">JPG, PNG up to 5MB</span>
+          </div>
+        </div>
+        <div class="upload-preview" id="upload-preview">
+          <span class="fname" id="preview-fname"></span>
+          <span class="upload-progress" id="upload-progress"></span>
+          <button class="btn-remove-file" onclick="removeFile()" title="Remove">✕</button>
+        </div>
+
+        <div class="form-group" id="doc-filename-group" style="display:none">
+          <label>Document Display Name</label>
+          <input type="text" id="doc-filename" placeholder="e.g. Invoice.pdf" />
+          <p class="hint">This is the file name shown to the contact in WhatsApp (instead of "Untitled").</p>
+        </div>
+
+        <div class="form-group" style="margin-top:16px">
+          <label>Body Text <span style="color:#dc2626">*</span></label>
+          <textarea id="tpl-body" placeholder="Hello {{1}}, your order {{2}} is confirmed!" oninput="updateCharCount()"></textarea>
+          <div class="char-count" id="char-count">0 / 1024</div>
+          <p class="hint">Use {{1}}, {{2}}... for dynamic variables</p>
+        </div>
+
+        <div class="form-group">
+          <label>Footer Text <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+          <input type="text" id="tpl-footer" placeholder="e.g. Reply STOP to unsubscribe" maxlength="60" />
+        </div>
+
+        <div class="btn-row">
+          <button class="btn-preview" onclick="openPreview()">👁 Preview</button>
+          <button class="btn-create" id="create-btn" onclick="createTemplate()">✨ Create Template</button>
+        </div>
+        <div class="alert" id="create-alert"></div>
       </div>
-      <div class="form-group">
-        <label>Category</label>
-        <select id="tpl-category">
-          <option value="MARKETING">Marketing</option>
-          <option value="UTILITY">Utility</option>
-          <option value="AUTHENTICATION">Authentication</option>
-        </select>
+
+      <!-- All Templates -->
+      <div id="panel-all" class="tab-panel">
+        <div id="templates-list-all"><div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading templates...</div></div></div>
+        <div id="tpl-pagination" style="display:none;align-items:center;justify-content:center;gap:14px;margin-top:18px"></div>
       </div>
-    </div>
 
-    <div class="row-2">
-      <div class="form-group">
-        <label>Language</label>
-        <select id="tpl-language">
-          <option value="en">English</option>
-          <option value="en_US">English (US)</option>
-          <option value="hi">Hindi</option>
-          <option value="ta">Tamil</option>
-          <option value="te">Telugu</option>
-          <option value="ml">Malayalam</option>
-          <option value="kn">Kannada</option>
-          <option value="mr">Marathi</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Header Type</label>
-        <select id="tpl-header-type" onchange="onHeaderTypeChange(this.value)">
-          <option value="NONE">No Header (Text only)</option>
-          <option value="IMAGE">Image</option>
-          <option value="DOCUMENT">PDF / Document</option>
-        </select>
-      </div>
     </div>
-
-    <!-- File upload zone -->
-    <div class="upload-area" id="upload-area"
-         onclick="document.getElementById('file-input').click()"
-         ondragover="onDragOver(event)" ondragleave="onDragLeave(event)" ondrop="onDrop(event)">
-      <input type="file" id="file-input" onchange="onFileSelected(this)" />
-      <div class="upload-icon" id="upload-icon">📁</div>
-      <div class="upload-text">
-        Drag &amp; drop or <strong>browse</strong> to upload<br/>
-        <span id="upload-hint" style="font-size:11px;color:var(--text-3)">JPG, PNG up to 5MB</span>
-      </div>
-    </div>
-    <div class="upload-preview" id="upload-preview">
-      <span class="fname" id="preview-fname"></span>
-      <span class="upload-progress" id="upload-progress"></span>
-      <button class="btn-remove-file" onclick="removeFile()" title="Remove">✕</button>
-    </div>
-
-    <div class="form-group" id="doc-filename-group" style="display:none">
-      <label>Document Display Name</label>
-      <input type="text" id="doc-filename" placeholder="e.g. Invoice.pdf" />
-      <p class="hint">This is the file name shown to the contact in WhatsApp (instead of "Untitled").</p>
-    </div>
-
-    <div class="form-group" style="margin-top:16px">
-      <label>Body Text <span style="color:#dc2626">*</span></label>
-      <textarea id="tpl-body" placeholder="Hello {{1}}, your order {{2}} is confirmed!" oninput="updateCharCount()"></textarea>
-      <div class="char-count" id="char-count">0 / 1024</div>
-      <p class="hint">Use {{1}}, {{2}}... for dynamic variables</p>
-    </div>
-
-    <div class="form-group">
-      <label>Footer Text <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
-      <input type="text" id="tpl-footer" placeholder="e.g. Reply STOP to unsubscribe" maxlength="60" />
-    </div>
-
-    <div class="btn-row">
-      <button class="btn-preview" onclick="openPreview()">👁 Preview</button>
-      <button class="btn-create" id="create-btn" onclick="createTemplate()">✨ Create Template</button>
-    </div>
-    <div class="alert" id="create-alert"></div>
   </div>
 </div>
 
@@ -269,43 +284,103 @@
     } catch (e) {}
   }
 
+  let tplData = { data: [], all: [], total: 0 };
+
+  function renderTemplateCards(list) {
+    if (!list.length) {
+      return '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No templates found.</div><div class="empty-sub">Create one below.</div></div>';
+    }
+    const html = list.map(t => {
+      const body   = t.components?.find(c => c.type === 'BODY')?.text || '';
+      const header = t.components?.find(c => c.type === 'HEADER');
+      const tag    = header ? `<span style="font-size:10.5px;color:var(--text-3);font-weight:600">[${header.format}]</span> ` : '';
+      const needsMedia = header && ['IMAGE','VIDEO','DOCUMENT'].includes(header.format);
+      const attachHtml = needsMedia ? `
+          <label class="btn-attach" style="margin-top:8px;font-size:11px;font-weight:600;color:var(--g-500);cursor:pointer;display:block;text-align:right">
+            📎 Attach for Sending
+            <input type="file" accept="image/*,application/pdf,video/*" style="display:none" onchange="onAttachMediaSelected(this, '${t.name}', '${header.format}')" />
+          </label>
+          <span class="attach-status" id="attach-status-${t.name}" style="font-size:10px;color:var(--text-3);display:block;text-align:right;margin-top:2px"></span>` : '';
+      return `
+        <div class="tpl-card">
+          <div class="tpl-info">
+            <div class="tpl-name">${t.name}</div>
+            <div class="tpl-body">${tag}${body.substring(0,130)}${body.length > 130 ? '…' : ''}</div>
+            <div class="tpl-meta">${t.category} &middot; ${t.language}</div>
+          </div>
+          <div class="tpl-card-right">
+            <span class="badge ${badgeClass(t.status)}">${t.status}</span>
+            ${attachHtml}
+          </div>
+        </div>`;
+    }).join('');
+    return `<div class="tpl-grid">${html}</div>`;
+  }
+
+  const ALL_TPL_PAGE_SIZE = 5;
+  let allTplPage = 1;
+
+  function renderTplLists() {
+    document.getElementById('templates-list').innerHTML    = renderTemplateCards(tplData.data);
+    document.getElementById('tpl-count-label').textContent = `(${tplData.total} total)`;
+    allTplPage = 1;
+    renderAllTplPage();
+  }
+
+  function renderAllTplPage() {
+    const totalPages = Math.max(1, Math.ceil(tplData.all.length / ALL_TPL_PAGE_SIZE));
+    allTplPage = Math.min(Math.max(1, allTplPage), totalPages);
+    const start = (allTplPage - 1) * ALL_TPL_PAGE_SIZE;
+    document.getElementById('templates-list-all').innerHTML =
+      renderTemplateCards(tplData.all.slice(start, start + ALL_TPL_PAGE_SIZE));
+
+    const pag = document.getElementById('tpl-pagination');
+    if (tplData.all.length <= ALL_TPL_PAGE_SIZE) {
+      pag.style.display = 'none';
+      pag.innerHTML = '';
+      return;
+    }
+    pag.style.display = 'flex';
+    pag.innerHTML = `
+      <button class="btn btn-outline btn-sm" onclick="changeAllTplPage(-1)" ${allTplPage === 1 ? 'disabled' : ''}>‹ Prev</button>
+      <span style="font-size:12.5px;color:var(--text-2)">Page ${allTplPage} of ${totalPages}</span>
+      <button class="btn btn-outline btn-sm" onclick="changeAllTplPage(1)" ${allTplPage === totalPages ? 'disabled' : ''}>Next ›</button>
+    `;
+  }
+
+  function changeAllTplPage(delta) {
+    allTplPage += delta;
+    renderAllTplPage();
+    document.getElementById('templates-list-all').scrollIntoView({ block: 'nearest' });
+  }
+
+  function switchTplTab(tab) {
+    document.getElementById('tpl-tab-recent').classList.toggle('active', tab === 'recent');
+    document.getElementById('tpl-tab-all').classList.toggle('active', tab === 'all');
+    document.getElementById('panel-recent').classList.toggle('active', tab === 'recent');
+    document.getElementById('panel-all').classList.toggle('active', tab === 'all');
+  }
+
   async function loadTemplates() {
-    document.getElementById('templates-list').innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>';
+    const loadingHtml = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>';
+    document.getElementById('templates-list').innerHTML     = loadingHtml;
+    document.getElementById('templates-list-all').innerHTML = loadingHtml;
+    document.getElementById('tpl-pagination').style.display = 'none';
     try {
       const res  = await fetch(`${API}/list`);
       const data = await res.json();
-      if (!data.success || !data.data.length) {
-        document.getElementById('templates-list').innerHTML =
-          '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No templates found.</div><div class="empty-sub">Create one below.</div></div>';
+      if (!data.success) {
+        const errHtml = `<div class="empty-state"><div class="empty-text">Error: ${data.error || 'Failed to load templates'}</div></div>`;
+        document.getElementById('templates-list').innerHTML     = errHtml;
+        document.getElementById('templates-list-all').innerHTML = errHtml;
         return;
       }
-      const html = data.data.map(t => {
-        const body   = t.components?.find(c => c.type === 'BODY')?.text || '';
-        const header = t.components?.find(c => c.type === 'HEADER');
-        const tag    = header ? `<span style="font-size:10.5px;color:var(--text-3);font-weight:600">[${header.format}]</span> ` : '';
-        const needsMedia = header && ['IMAGE','VIDEO','DOCUMENT'].includes(header.format);
-        const attachHtml = needsMedia ? `
-            <label class="btn-attach" style="margin-top:8px;font-size:11px;font-weight:600;color:var(--g-500);cursor:pointer;display:block;text-align:right">
-              📎 Attach for Sending
-              <input type="file" accept="image/*,application/pdf,video/*" style="display:none" onchange="onAttachMediaSelected(this, '${t.name}', '${header.format}')" />
-            </label>
-            <span class="attach-status" id="attach-status-${t.name}" style="font-size:10px;color:var(--text-3);display:block;text-align:right;margin-top:2px"></span>` : '';
-        return `
-          <div class="tpl-card">
-            <div class="tpl-info">
-              <div class="tpl-name">${t.name}</div>
-              <div class="tpl-body">${tag}${body.substring(0,130)}${body.length > 130 ? '…' : ''}</div>
-              <div class="tpl-meta">${t.category} &middot; ${t.language}</div>
-            </div>
-            <div class="tpl-card-right">
-              <span class="badge ${badgeClass(t.status)}">${t.status}</span>
-              ${attachHtml}
-            </div>
-          </div>`;
-      }).join('');
-      document.getElementById('templates-list').innerHTML = `<div class="tpl-grid">${html}</div>`;
+      tplData = { data: data.data || [], all: data.all || [], total: data.total ?? (data.all || []).length };
+      renderTplLists();
     } catch (e) {
-      document.getElementById('templates-list').innerHTML = `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+      const errHtml = `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+      document.getElementById('templates-list').innerHTML     = errHtml;
+      document.getElementById('templates-list-all').innerHTML = errHtml;
     }
   }
 
@@ -509,15 +584,32 @@
       const res  = await fetch('/api/auth/me', { credentials: 'same-origin' });
       const data = await res.json();
       if (data.logged_in) {
-        document.getElementById('sidebar-email').textContent = data.email;
+        const displayName = data.name || data.email;
+        document.getElementById('sidebar-email').textContent = displayName;
         document.getElementById('sidebar-user').style.display = 'block';
-        document.getElementById('hdr-email').textContent = data.email;
-        document.getElementById('hdr-avatar').textContent = data.email.charAt(0).toUpperCase();
+        document.getElementById('hdr-email').textContent = displayName;
+        document.getElementById('hdr-avatar').textContent = displayName.charAt(0).toUpperCase();
       }
     } catch (e) {}
   }
   async function doLogout() {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch (e) {}
+    try { localStorage.clear(); } catch (e) {}
+    try { sessionStorage.clear(); } catch (e) {}
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch (e) {}
+    // Best-effort: the session cookie itself is HttpOnly and already cleared
+    // by the backend logout call above — this just sweeps any other cookies.
+    try {
+      document.cookie.split(';').forEach((c) => {
+        const name = c.split('=')[0].trim();
+        if (name) document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+      });
+    } catch (e) {}
     window.location.href = '/login';
   }
   loadSidebarUser();

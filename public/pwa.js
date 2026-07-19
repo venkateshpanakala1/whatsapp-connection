@@ -15,7 +15,7 @@ function isStandalone() {
 // before the rest of the page parses, so a restricted screen never actually
 // renders when opened from the home-screen icon.
 (function restrictInstalledAppToReplies() {
-  const RESTRICTED_PATHS = ['/', '/templates', '/contacts', '/send'];
+  const RESTRICTED_PATHS = ['/', '/templates', '/contacts', '/send', '/history'];
   if (isStandalone() && RESTRICTED_PATHS.includes(window.location.pathname)) {
     window.location.replace('/replies');
   }
@@ -76,6 +76,17 @@ async function installApp() {
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+  // A new service worker only takes control *after* this page's own assets
+  // (style.css etc.) already loaded under the old one — so without this, an
+  // update requires a manual second refresh to actually show up. Reload once
+  // automatically when control changes instead. Guarded so it can only ever
+  // fire once per page (a controllerchange loop would otherwise reload forever).
+  let reloadedForNewWorker = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadedForNewWorker) return;
+    reloadedForNewWorker = true;
+    window.location.reload();
   });
   // The service worker's push handler posts this so an already-open page can
   // refresh immediately instead of waiting for its next poll tick.

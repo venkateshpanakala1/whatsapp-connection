@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin — V7</title>
+  <meta name="theme-color" content="#075e54">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="/favicon-64.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .admin-badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: rgba(37,211,102,0.12); border: 1px solid rgba(37,211,102,0.35);
+      color: #6ee7b7; font-size: 11.5px; font-weight: 700;
+      padding: 4px 12px; border-radius: 20px; letter-spacing: 0.3px;
+    }
+  </style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon"><img src="/icon-192.png" alt="V7 logo"></div>
+    <div class="brand-text">
+      <div class="app-name">V7</div>
+      <div class="app-sub">admin panel</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Admin</div>
+    <a href="/admin" class="nav-item active"><span class="nav-icon">🏢</span> Tenants</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="conn-status">
+      <span class="conn-dot on"></span>
+      <span>Signed in as Admin</span>
+    </div>
+    <div style="margin-top:10px">
+      <button onclick="doLogout()" style="width:100%;padding:7px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">
+        🚪 Sign Out
+      </button>
+    </div>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="page-hdr">
+    <div>
+      <div class="ph-title">Tenants</div>
+      <div class="ph-sub">Register and manage tenant accounts</div>
+    </div>
+    <div class="ph-user">
+      <span class="admin-badge">🛡️ Admin</span>
+      <button class="btn-logout" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+
+  <div class="card card-wide">
+    <div class="card-hdr">
+      <div class="card-title">Register Tenant</div>
+    </div>
+
+    <div class="row-2">
+      <div class="form-group">
+        <label>Name</label>
+        <input type="text" id="t-name" placeholder="e.g. Acme Corp" />
+      </div>
+      <div class="form-group">
+        <label>Email</label>
+        <input type="text" id="t-email" placeholder="tenant@example.com" />
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Password</label>
+      <input type="password" id="t-password" placeholder="At least 6 characters" />
+      <p class="hint">The tenant will sign in with this email &amp; password at /login.</p>
+    </div>
+
+    <button class="btn btn-primary btn-lg btn-full" id="reg-btn" onclick="registerTenant()">Register Tenant</button>
+    <div class="alert" id="reg-alert"></div>
+  </div>
+
+  <div class="card card-wide">
+    <div class="card-hdr">
+      <div class="card-title">Registered Tenants</div>
+      <button class="btn btn-outline btn-sm" onclick="loadTenants()">↻ Refresh</button>
+    </div>
+    <div id="tenants-list"><div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div></div>
+  </div>
+</div>
+
+<!-- Delete confirmation modal -->
+<div class="modal-overlay" id="confirm-modal" onclick="if(event.target===this) closeConfirmModal()">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span class="modal-title">Delete tenant?</span>
+      <button class="modal-close" onclick="closeConfirmModal()">✕</button>
+    </div>
+    <div style="padding:20px 24px">
+      <p id="confirm-message" style="color:var(--text-2);font-size:14px;line-height:1.6"></p>
+      <div style="display:flex;gap:10px;margin-top:22px">
+        <button class="btn btn-outline" style="flex:1" onclick="closeConfirmModal()">Cancel</button>
+        <button class="btn btn-danger" style="flex:1;border-color:transparent;background:#dc2626;color:#fff" id="confirm-delete-btn" onclick="confirmDeleteTenant()">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function esc(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function showAlert(id, type, msg) {
+    const el = document.getElementById(id);
+    el.className = `alert ${type}`;
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  function hideAlert(id) { document.getElementById(id).style.display = 'none'; }
+
+  async function registerTenant() {
+    const name     = document.getElementById('t-name').value.trim();
+    const email    = document.getElementById('t-email').value.trim();
+    const password = document.getElementById('t-password').value;
+    if (!name || !email || !password) {
+      return showAlert('reg-alert', 'error', 'Name, email and password are required.');
+    }
+    if (password.length < 6) {
+      return showAlert('reg-alert', 'error', 'Password must be at least 6 characters.');
+    }
+
+    const btn = document.getElementById('reg-btn');
+    btn.disabled = true; btn.textContent = 'Registering...';
+    hideAlert('reg-alert');
+    try {
+      const res  = await fetch('/api/auth/admin/register-tenant', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, email, password }),
+        credentials: 'same-origin',
+      });
+      const data = await res.json();
+      if (data.success) {
+        showAlert('reg-alert', 'success', data.message);
+        document.getElementById('t-name').value = '';
+        document.getElementById('t-email').value = '';
+        document.getElementById('t-password').value = '';
+        loadTenants();
+      } else {
+        showAlert('reg-alert', 'error', data.error || 'Could not register tenant');
+      }
+    } catch (e) {
+      showAlert('reg-alert', 'error', 'Server error: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Register Tenant';
+    }
+  }
+
+  async function loadTenants() {
+    const el = document.getElementById('tenants-list');
+    el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>';
+    try {
+      const res  = await fetch('/api/auth/admin/tenants', { credentials: 'same-origin' });
+      if (res.status === 401) { window.location.href = '/login'; return; }
+      const data = await res.json();
+      const tenants = data.tenants || [];
+      if (!tenants.length) {
+        el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No tenants registered yet.</div></div>';
+        return;
+      }
+      el.innerHTML = `<div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Email</th><th>Registered</th><th></th></tr></thead>
+        <tbody>${tenants.map(t => `
+          <tr>
+            <td>${esc(t.name || '—')}</td>
+            <td>${esc(t.email)}</td>
+            <td>${t.created_at ? new Date(t.created_at).toLocaleString([], {month:'short', day:'numeric', year:'numeric', hour:'2-digit', minute:'2-digit'}) : ''}</td>
+            <td><button class="btn btn-danger btn-sm" onclick="deleteTenant(${t.id}, '${esc(t.name || t.email).replace(/'/g, "\\'")}')">🗑 Delete</button></td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`;
+    } catch (e) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+    }
+  }
+
+  let pendingDeleteId = null;
+
+  function deleteTenant(id, label) {
+    pendingDeleteId = id;
+    document.getElementById('confirm-message').innerHTML =
+      `Delete <strong>${esc(label)}</strong> and ALL of their data — contacts, templates, sent messages, replies, everything?<br><br>This cannot be undone.`;
+    document.getElementById('confirm-modal').classList.add('open');
+  }
+
+  function closeConfirmModal() {
+    document.getElementById('confirm-modal').classList.remove('open');
+    pendingDeleteId = null;
+  }
+
+  async function confirmDeleteTenant() {
+    const id = pendingDeleteId;
+    if (!id) return;
+    closeConfirmModal();
+    try {
+      const res  = await fetch(`/api/auth/admin/tenants/${id}`, { method: 'DELETE', credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.success) {
+        showAlert('reg-alert', 'success', data.message);
+        loadTenants();
+      } else {
+        showAlert('reg-alert', 'error', data.error || 'Could not delete tenant');
+      }
+    } catch (e) {
+      showAlert('reg-alert', 'error', 'Server error: ' + e.message);
+    }
+  }
+
+  async function doLogout() {
+    try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch (e) {}
+    try { localStorage.clear(); } catch (e) {}
+    try { sessionStorage.clear(); } catch (e) {}
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch (e) {}
+    // Best-effort: the session cookie itself is HttpOnly and already cleared
+    // by the backend logout call above — this just sweeps any other cookies.
+    try {
+      document.cookie.split(';').forEach((c) => {
+        const name = c.split('=')[0].trim();
+        if (name) document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+      });
+    } catch (e) {}
+    window.location.href = '/login';
+  }
+
+  loadTenants();
+</script>
+</body>
+</html>

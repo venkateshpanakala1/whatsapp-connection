@@ -7,6 +7,8 @@
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#075e54">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="/favicon-64.png">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <script src="/pwa.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -65,10 +67,10 @@
 
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <div class="brand-icon"><img src="/v7.jpeg" alt="V7 logo" /></div>
+    <div class="brand-icon"><img src="/icon-192.png" alt="V7 logo"></div>
     <div class="brand-text">
       <div class="app-name">V7</div>
-      <div class="app-sub">stress2solution</div>
+      <div class="app-sub">Stress2Solutions</div>
     </div>
   </div>
   <nav class="sidebar-nav">
@@ -78,6 +80,7 @@
     <a href="/templates" class="nav-item"><span class="nav-icon">📋</span> Templates</a>
     <a href="/contacts"  class="nav-item"><span class="nav-icon">👥</span> Contacts</a>
     <a href="/send"      class="nav-item"><span class="nav-icon">📤</span> Bulk Send</a>
+    <a href="/history"   class="nav-item"><span class="nav-icon">📊</span> History</a>
     <a href="/replies"   class="nav-item"><span class="nav-icon">💬</span> Replies</a>
   </nav>
   <div class="sidebar-footer">
@@ -118,7 +121,7 @@
 
   <!-- Tabs + Form (hidden when connected) -->
   <div id="connect-form-wrap" style="display:none">
-  <div class="tabs-wrap card-sm" style="max-width:560px">
+  <div class="tabs-wrap card-sm" style="max-width:640px">
     <div class="tab active" onclick="switchTab('connect')">Connect WhatsApp</div>
     <div class="tab"        onclick="switchTab('token')">Generate Token</div>
   </div>
@@ -199,7 +202,37 @@
   </div><!-- /connect-form-wrap -->
 </div>
 
+<!-- Confirm modal (replaces native confirm() popups) -->
+<div class="modal-overlay" id="confirm-modal" onclick="if(event.target===this) closeConfirmModal()">
+  <div class="modal" style="width:420px">
+    <div class="modal-hdr">
+      <span class="modal-title" id="confirm-modal-title">Confirm</span>
+      <button class="modal-close" onclick="closeConfirmModal()">✕</button>
+    </div>
+    <div style="padding:20px 24px">
+      <p id="confirm-modal-message" style="color:var(--text-2);font-size:14px;line-height:1.6"></p>
+      <div style="display:flex;gap:10px;margin-top:22px">
+        <button class="btn btn-outline" style="flex:1" onclick="closeConfirmModal()">Cancel</button>
+        <button class="btn btn-danger" style="flex:1;border-color:transparent;background:#dc2626;color:#fff" id="confirm-modal-ok-btn">Confirm</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
+  function showConfirm(message, onConfirm, opts) {
+    opts = opts || {};
+    document.getElementById('confirm-modal-title').textContent = opts.title || 'Confirm';
+    document.getElementById('confirm-modal-message').textContent = message;
+    const okBtn = document.getElementById('confirm-modal-ok-btn');
+    okBtn.textContent = opts.okText || 'Confirm';
+    okBtn.onclick = () => { closeConfirmModal(); onConfirm(); };
+    document.getElementById('confirm-modal').classList.add('open');
+  }
+  function closeConfirmModal() {
+    document.getElementById('confirm-modal').classList.remove('open');
+  }
+
   const API = '/api/whatsapp';
 
   function switchTab(tab) {
@@ -300,10 +333,11 @@
     });
   }
 
-  async function disconnect() {
-    if (!confirm('Disconnect WhatsApp?')) return;
-    await fetch(`${API}/disconnect`, { method: 'POST' });
-    await loadStatus();
+  function disconnect() {
+    showConfirm('Disconnect WhatsApp?', async () => {
+      await fetch(`${API}/disconnect`, { method: 'POST' });
+      await loadStatus();
+    }, { okText: 'Disconnect' });
   }
 
   loadStatus();
@@ -314,16 +348,33 @@
       const res  = await fetch('/api/auth/me', { credentials: 'same-origin' });
       const data = await res.json();
       if (data.logged_in) {
-        document.getElementById('sidebar-email').textContent = data.email;
+        const displayName = data.name || data.email;
+        document.getElementById('sidebar-email').textContent = displayName;
         document.getElementById('sidebar-user').style.display = 'block';
-        document.getElementById('hdr-email').textContent = data.email;
-        document.getElementById('hdr-avatar').textContent = data.email.charAt(0).toUpperCase();
+        document.getElementById('hdr-email').textContent = displayName;
+        document.getElementById('hdr-avatar').textContent = displayName.charAt(0).toUpperCase();
       }
     } catch (e) {}
   }
 
   async function doLogout() {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch (e) {}
+    try { localStorage.clear(); } catch (e) {}
+    try { sessionStorage.clear(); } catch (e) {}
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch (e) {}
+    // Best-effort: the session cookie itself is HttpOnly and already cleared
+    // by the backend logout call above — this just sweeps any other cookies.
+    try {
+      document.cookie.split(';').forEach((c) => {
+        const name = c.split('=')[0].trim();
+        if (name) document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+      });
+    } catch (e) {}
     window.location.href = '/login';
   }
 </script>
