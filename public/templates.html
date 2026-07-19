@@ -83,6 +83,17 @@
     }
     .btn-create:hover:not(:disabled) { background: #0e7569; transform: translateY(-1px); }
     .btn-create:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* ── Status reason + edit ── */
+    .tpl-status-note { font-size: 11px; margin-top: 6px; max-width: 220px; text-align: right; line-height: 1.4; }
+    .tpl-status-note.reason  { color: #f87171; }
+    .tpl-status-note.pending { color: var(--text-3); }
+    .btn-edit-tpl {
+      background: none; border: none; margin-top: 6px;
+      font-size: 11px; font-weight: 600; color: var(--g-500); cursor: pointer;
+      padding: 0; text-align: right;
+    }
+    .btn-edit-tpl:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -265,6 +276,49 @@
   </div>
 </div>
 
+<!-- Edit & Resubmit Modal -->
+<div class="modal-overlay" id="edit-modal" onclick="closeEditModalOnBg(event)">
+  <div class="modal">
+    <div class="modal-hdr">
+      <span class="modal-title">Edit Template</span>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <div style="padding:20px 24px">
+      <div style="font-size:13px;font-weight:700;color:var(--text);margin-bottom:2px" id="edit-tpl-name"></div>
+      <p class="hint" style="margin-bottom:14px">Name and language can't be changed — editing resubmits this template to Meta for a fresh review.</p>
+
+      <div class="alert error" id="edit-tpl-reason" style="display:none;margin-bottom:14px"></div>
+
+      <div class="form-group">
+        <label>Category</label>
+        <select id="edit-tpl-category">
+          <option value="MARKETING">Marketing</option>
+          <option value="UTILITY">Utility</option>
+          <option value="AUTHENTICATION">Authentication</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Body Text</label>
+        <textarea id="edit-tpl-body" oninput="updateEditCharCount()"></textarea>
+        <div class="char-count" id="edit-char-count">0 / 1024</div>
+      </div>
+
+      <div class="form-group">
+        <label>Footer Text <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+        <input type="text" id="edit-tpl-footer" maxlength="60" />
+      </div>
+
+      <div class="alert" id="edit-alert"></div>
+
+      <div style="display:flex;gap:10px;margin-top:12px">
+        <button class="btn btn-outline" style="flex:1" onclick="closeEditModal()">Cancel</button>
+        <button class="btn-create" style="flex:1" id="edit-submit-btn" onclick="submitEdit()">Resubmit for Review</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   const API = '/api/templates';
   let uploadedHandle = '';
@@ -301,6 +355,21 @@
             <input type="file" accept="image/*,application/pdf,video/*" style="display:none" onchange="onAttachMediaSelected(this, '${t.name}', '${header.format}')" />
           </label>
           <span class="attach-status" id="attach-status-${t.name}" style="font-size:10px;color:var(--text-3);display:block;text-align:right;margin-top:2px"></span>` : '';
+
+      // REJECTED comes with Meta's actual reason; PENDING never has one until
+      // Meta finishes reviewing it (can take minutes up to ~24h) — showing a
+      // plain explanation there instead of nothing avoids it looking broken.
+      let statusNoteHtml = '';
+      if (t.status === 'REJECTED') {
+        const reason = (t.rejected_reason && t.rejected_reason !== 'NONE') ? t.rejected_reason : 'No reason provided by Meta.';
+        statusNoteHtml = `<div class="tpl-status-note reason">${esc(reason)}</div>`;
+      } else if (t.status === 'PENDING') {
+        statusNoteHtml = `<div class="tpl-status-note pending">Awaiting Meta's review</div>`;
+      }
+      const editHtml = (t.status === 'PENDING' || t.status === 'REJECTED')
+        ? `<button class="btn-edit-tpl" onclick="openEditModal('${t.name}')">✎ Edit &amp; resubmit</button>`
+        : '';
+
       return `
         <div class="tpl-card">
           <div class="tpl-info">
@@ -310,6 +379,8 @@
           </div>
           <div class="tpl-card-right">
             <span class="badge ${badgeClass(t.status)}">${t.status}</span>
+            ${statusNoteHtml}
+            ${editHtml}
             ${attachHtml}
           </div>
         </div>`;
@@ -575,6 +646,85 @@
   }
   function closePreview() { document.getElementById('preview-modal').classList.remove('open'); }
   function closePreviewOnBg(e) { if (e.target === document.getElementById('preview-modal')) closePreview(); }
+
+  function esc(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── Edit & resubmit (PENDING / REJECTED templates only) ──
+  let editingTemplate = null;
+
+  function openEditModal(name) {
+    const t = tplData.all.find(x => x.name === name) || tplData.data.find(x => x.name === name);
+    if (!t) return;
+    editingTemplate = t;
+
+    const bodyComp   = t.components?.find(c => c.type === 'BODY');
+    const footerComp = t.components?.find(c => c.type === 'FOOTER');
+
+    document.getElementById('edit-tpl-name').textContent = `${t.name} (${t.language})`;
+    document.getElementById('edit-tpl-category').value   = t.category || 'MARKETING';
+    document.getElementById('edit-tpl-body').value       = bodyComp?.text || '';
+    document.getElementById('edit-tpl-footer').value     = footerComp?.text || '';
+    document.getElementById('edit-char-count').textContent = `${(bodyComp?.text || '').length} / 1024`;
+
+    const reasonEl = document.getElementById('edit-tpl-reason');
+    if (t.status === 'REJECTED') {
+      reasonEl.textContent = 'Rejected by Meta: ' + ((t.rejected_reason && t.rejected_reason !== 'NONE') ? t.rejected_reason : 'no reason provided.');
+      reasonEl.style.display = 'block';
+    } else {
+      reasonEl.style.display = 'none';
+    }
+
+    hideAlert('edit-alert');
+    document.getElementById('edit-modal').classList.add('open');
+  }
+
+  function closeEditModal() {
+    document.getElementById('edit-modal').classList.remove('open');
+    editingTemplate = null;
+  }
+  function closeEditModalOnBg(e) { if (e.target === document.getElementById('edit-modal')) closeEditModal(); }
+
+  function updateEditCharCount() {
+    const len = document.getElementById('edit-tpl-body').value.length;
+    document.getElementById('edit-char-count').textContent = `${len} / 1024`;
+  }
+
+  async function submitEdit() {
+    if (!editingTemplate) return;
+    const body_text   = document.getElementById('edit-tpl-body').value.trim();
+    const footer_text = document.getElementById('edit-tpl-footer').value.trim();
+    const category    = document.getElementById('edit-tpl-category').value;
+    if (!body_text) return showAlert('edit-alert', 'error', 'Body text is required');
+    if (body_text.length > 1024) return showAlert('edit-alert', 'error', 'Body exceeds 1024 chars');
+
+    const headerComponent = editingTemplate.components?.find(c => c.type === 'HEADER') || null;
+
+    const btn = document.getElementById('edit-submit-btn');
+    btn.disabled = true; btn.textContent = 'Resubmitting...';
+    hideAlert('edit-alert');
+    try {
+      const res  = await fetch(`${API}/edit`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingTemplate.id, category, body_text, footer_text,
+          header_component: headerComponent,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        closeEditModal();
+        loadTemplates();
+      } else {
+        showAlert('edit-alert', 'error', data.error || 'Failed to update template');
+      }
+    } catch (e) {
+      showAlert('edit-alert', 'error', 'Server error: ' + e.message);
+    } finally {
+      btn.disabled = false; btn.textContent = 'Resubmit for Review';
+    }
+  }
 
   loadSidebarStatus();
   loadTemplates();

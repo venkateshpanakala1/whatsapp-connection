@@ -48,7 +48,7 @@ def list_templates():
     try:
         all_templates = []
         url     = f"{META_API}/{creds['waba_id']}/message_templates"
-        params  = {'limit': 100, 'fields': 'id,name,category,language,status,components,created_time'}
+        params  = {'limit': 100, 'fields': 'id,name,category,language,status,components,created_time,rejected_reason'}
         headers = {'Authorization': f"Bearer {creds['access_token']}"}
 
         while url:
@@ -213,6 +213,56 @@ def create_template():
             'data': data
         })
 
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+# POST /api/templates/edit
+# Edits a PENDING or REJECTED template's category/body/footer text and
+# resubmits it to Meta for review. Meta ties a template's identity to its
+# name+language pair, so those can't be changed here — only the content.
+# Meta's edit endpoint replaces the whole components array, so any existing
+# HEADER component must be echoed back unchanged or it would be silently
+# dropped from the template.
+@templates_bp.route('/edit', methods=['POST'])
+def edit_template():
+    creds = get_wa_credentials(session.get('user_id'))
+    if not creds:
+        return jsonify({'error': 'WhatsApp not connected'}), 400
+
+    body        = request.get_json()
+    template_id = (body.get('id') or '').strip()
+    category    = (body.get('category') or '').strip().upper()
+    body_text   = (body.get('body_text') or '').strip()
+    footer_text = (body.get('footer_text') or '').strip()
+    header_component = body.get('header_component')  # unchanged pass-through, or None
+
+    if not template_id or not body_text:
+        return jsonify({'error': 'Template id and body text are required'}), 400
+    if len(body_text) > 1024:
+        return jsonify({'error': 'Body exceeds 1024 characters'}), 400
+
+    components = []
+    if header_component:
+        components.append(header_component)
+    components.append({'type': 'BODY', 'text': body_text})
+    if footer_text:
+        components.append({'type': 'FOOTER', 'text': footer_text})
+
+    try:
+        res = http.post(
+            f"{META_API}/{template_id}",
+            headers={
+                'Authorization': f"Bearer {creds['access_token']}",
+                'Content-Type': 'application/json'
+            },
+            json={'category': category, 'components': components},
+            timeout=30
+        )
+        data = res.json()
+        if 'error' in data:
+            return jsonify({'error': data['error']['message']}), 400
+        return jsonify({'success': True, 'message': 'Template updated and resubmitted for review'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
