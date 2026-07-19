@@ -7,7 +7,6 @@
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#075e54">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="icon" type="image/png" href="/favicon-64.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <script src="/pwa.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -34,17 +33,17 @@
     .btn-run:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
     /* Control buttons */
+    .ctrl-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 16px; }
     .btn-ctrl {
       padding: 12px; border-radius: 10px;
       font-size: 14px; font-weight: 700; cursor: pointer;
       font-family: inherit; transition: all var(--t); border: none;
     }
     .btn-ctrl:disabled { opacity: 0.4; cursor: not-allowed; }
-    .btn-cancel { width: 100%; margin-top: 16px; background: #fee2e2; color: #991b1b; border: 1.5px solid #fca5a5; }
-    .btn-cancel:hover:not(:disabled) { background: #fecaca; }
-
-    .pill-cancelled { background: #fee2e2; color: #991b1b; }
-    .pill-cancelled::before { background: #ef4444; }
+    .btn-pause  { background: #fef3c7; color: #92400e; border: 1.5px solid #fcd34d; }
+    .btn-pause:hover:not(:disabled)  { background: #fde68a; }
+    .btn-resume { background: #d1fae5; color: #065f46; border: 1.5px solid #6ee7b7; }
+    .btn-resume:hover:not(:disabled) { background: #a7f3d0; }
 
     /* Progress section */
     .progress-section { display: none; }
@@ -86,10 +85,10 @@
 
 <aside class="sidebar">
   <div class="sidebar-brand">
-    <div class="brand-icon"><img src="/icon-192.png" alt="V7 logo"></div>
+    <div class="brand-icon"><img src="/v7.jpeg" alt="V7 logo" /></div>
     <div class="brand-text">
       <div class="app-name">V7</div>
-      <div class="app-sub">Stress2Solutions</div>
+      <div class="app-sub">stress2solution</div>
     </div>
   </div>
   <nav class="sidebar-nav">
@@ -99,7 +98,6 @@
     <a href="/templates" class="nav-item"><span class="nav-icon">📋</span> Templates</a>
     <a href="/contacts"  class="nav-item"><span class="nav-icon">👥</span> Contacts</a>
     <a href="/send"      class="nav-item active"><span class="nav-icon">📤</span> Bulk Send</a>
-    <a href="/history"   class="nav-item"><span class="nav-icon">📊</span> History</a>
     <a href="/replies"   class="nav-item"><span class="nav-icon">💬</span> Replies</a>
   </nav>
   <div class="sidebar-footer">
@@ -216,43 +214,17 @@
       </div>
     </div>
 
-    <button class="btn-ctrl btn-cancel" id="cancel-btn" onclick="cancelJob()">✕ Cancel</button>
+    <div class="ctrl-row">
+      <button class="btn-ctrl btn-pause"  id="pause-btn"  onclick="pauseJob()">⏸ Pause</button>
+      <button class="btn-ctrl btn-resume" id="resume-btn" onclick="resumeJob()" disabled>▶ Resume</button>
+    </div>
 
     <div class="done-banner" id="done-banner"></div>
     <div class="error-list"  id="error-list"></div>
   </div>
 </div>
 
-<!-- Confirm modal (replaces native confirm() popups) -->
-<div class="modal-overlay" id="confirm-modal" onclick="if(event.target===this) closeConfirmModal()">
-  <div class="modal" style="width:420px">
-    <div class="modal-hdr">
-      <span class="modal-title" id="confirm-modal-title">Confirm</span>
-      <button class="modal-close" onclick="closeConfirmModal()">✕</button>
-    </div>
-    <div style="padding:20px 24px">
-      <p id="confirm-modal-message" style="color:var(--text-2);font-size:14px;line-height:1.6"></p>
-      <div style="display:flex;gap:10px;margin-top:22px">
-        <button class="btn btn-outline" style="flex:1" onclick="closeConfirmModal()">Cancel</button>
-        <button class="btn btn-danger" style="flex:1;border-color:transparent;background:#dc2626;color:#fff" id="confirm-modal-ok-btn">Confirm</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <script>
-  function showConfirm(message, onConfirm, opts) {
-    opts = opts || {};
-    document.getElementById('confirm-modal-title').textContent = opts.title || 'Confirm';
-    document.getElementById('confirm-modal-message').textContent = message;
-    const okBtn = document.getElementById('confirm-modal-ok-btn');
-    okBtn.textContent = opts.okText || 'Confirm';
-    okBtn.onclick = () => { closeConfirmModal(); onConfirm(); };
-    document.getElementById('confirm-modal').classList.add('open');
-  }
-  function closeConfirmModal() {
-    document.getElementById('confirm-modal').classList.remove('open');
-  }
   const API = '/api/send';
   let filesData     = [];
   let templatesData = [];
@@ -472,35 +444,19 @@
       document.getElementById('stat-total').textContent = data.total;
       document.getElementById('progress-section').classList.add('show');
       document.getElementById('run-btn').textContent = '📤 Sending...';
-      document.getElementById('cancel-btn').disabled = false;
       connectSSE(activeJobId);
     } catch (e) { showError('Server error: ' + e.message); resetBtn(); }
   }
-
-  let sseRetryCount = 0;
 
   function connectSSE(jobId) {
     if (eventSource) eventSource.close();
     eventSource = new EventSource(`${API}/progress/${jobId}`);
     eventSource.onmessage = e => {
-      sseRetryCount = 0; // any successful message means the connection is healthy again
       const d = JSON.parse(e.data);
       updateProgress(d);
-      if (d.status === 'done' || d.status === 'cancelled') { eventSource.close(); onDone(d); }
+      if (d.status === 'done') { eventSource.close(); onDone(d); }
     };
-    // A dropped connection (network blip, proxy idle-timeout, etc.) does NOT
-    // mean the job stopped — the backend keeps running regardless. Without
-    // reconnecting here, the UI just freezes at its last-seen count forever,
-    // even though sends keep happening — only a manual refresh would ever
-    // catch it back up. Retry with a short delay instead, capped so a truly
-    // dead/finished job doesn't retry forever.
-    eventSource.onerror = () => {
-      eventSource.close();
-      if (!activeJobId) return; // job already finished/cancelled, nothing to reconnect to
-      sseRetryCount++;
-      if (sseRetryCount > 20) return;
-      setTimeout(() => { if (activeJobId) connectSSE(jobId); }, 2000);
-    };
+    eventSource.onerror = () => { eventSource.close(); };
   }
 
   function updateProgress(d) {
@@ -512,25 +468,31 @@
     document.getElementById('stat-sent').textContent   = d.sent;
     document.getElementById('stat-failed').textContent = d.failed;
     document.getElementById('stat-total').textContent  = d.total;
-    if (d.status === 'running') {
+    if (d.status === 'paused') {
+      bar.classList.add('paused');
+      document.getElementById('prog-label').textContent = `Paused at ${d.current} of ${d.total}`;
+      pill.className = 'status-pill pill-paused'; pill.textContent = 'Paused';
+      document.getElementById('pause-btn').disabled  = true;
+      document.getElementById('resume-btn').disabled = false;
+    } else if (d.status === 'running') {
+      bar.classList.remove('paused');
       document.getElementById('prog-label').textContent = `Sending ${d.current} of ${d.total}…`;
       pill.className = 'status-pill pill-running'; pill.textContent = 'Running';
+      document.getElementById('pause-btn').disabled  = false;
+      document.getElementById('resume-btn').disabled = true;
     }
   }
 
   function onDone(d) {
-    const cancelled = d.status === 'cancelled';
     const pill = document.getElementById('status-pill');
-    pill.className = cancelled ? 'status-pill pill-cancelled' : 'status-pill pill-done';
-    pill.textContent = cancelled ? 'Cancelled' : 'Done ✓';
-    document.getElementById('prog-label').textContent = cancelled
-      ? `Cancelled at ${d.current} of ${d.total}` : 'Complete';
-    if (!cancelled) document.getElementById('progress-bar').style.width = '100%';
-    document.getElementById('cancel-btn').disabled = true;
+    pill.className = 'status-pill pill-done'; pill.textContent = 'Done ✓';
+    document.getElementById('prog-label').textContent    = 'Complete';
+    document.getElementById('progress-bar').style.width  = '100%';
+    document.getElementById('progress-bar').classList.remove('paused');
+    document.getElementById('pause-btn').disabled  = true;
+    document.getElementById('resume-btn').disabled = true;
     const banner = document.getElementById('done-banner');
-    banner.textContent = cancelled
-      ? `⏹ Cancelled. ${d.sent} sent, ${d.failed} failed, ${d.total - d.current} never sent.`
-      : `🎉 Done! ${d.sent} messages sent successfully${d.failed ? `, ${d.failed} failed` : ''}.`;
+    banner.textContent = `🎉 Done! ${d.sent} messages sent successfully${d.failed ? `, ${d.failed} failed` : ''}.`;
     banner.classList.add('show');
     if (d.errors && d.errors.length) {
       const el = document.getElementById('error-list');
@@ -542,26 +504,18 @@
     resetBtn();
   }
 
-  function cancelJob() {
+  async function pauseJob() {
     if (!activeJobId) return;
-    showConfirm('Cancel this bulk send? Contacts not yet messaged will never be sent, and this cannot be undone.', async () => {
-      const cancelBtn = document.getElementById('cancel-btn');
-      cancelBtn.disabled = true;
-      try {
-        const res  = await fetch(`${API}/cancel/${activeJobId}`, { method: 'POST' });
-        const data = await res.json();
-        if (!data.success) {
-          showError(data.error || 'Could not cancel — try again.');
-          cancelBtn.disabled = false;
-          return;
-        }
-        localStorage.removeItem('wa_job_id');
-        window.location.reload();
-      } catch (e) {
-        showError('Server error: ' + e.message);
-        cancelBtn.disabled = false;
-      }
-    }, { okText: 'Cancel Send' });
+    await fetch(`${API}/pause/${activeJobId}`, { method: 'POST' });
+    document.getElementById('pause-btn').disabled  = true;
+    document.getElementById('resume-btn').disabled = false;
+  }
+
+  async function resumeJob() {
+    if (!activeJobId) return;
+    await fetch(`${API}/resume/${activeJobId}`, { method: 'POST' });
+    document.getElementById('pause-btn').disabled  = false;
+    document.getElementById('resume-btn').disabled = true;
   }
 
   async function tryReconnect() {
@@ -569,9 +523,7 @@
     if (!savedId) return;
     const res  = await fetch(`${API}/status/${savedId}`);
     const data = await res.json();
-    if (!data.found || data.status === 'done' || data.status === 'cancelled') {
-      localStorage.removeItem('wa_job_id'); return;
-    }
+    if (!data.found || data.status === 'done') { localStorage.removeItem('wa_job_id'); return; }
     document.getElementById('reconnect-banner').classList.add('show');
     activeJobId = savedId;
     document.getElementById('stat-total').textContent  = data.total;
@@ -580,7 +532,6 @@
     document.getElementById('progress-section').classList.add('show');
     document.getElementById('run-btn').disabled    = true;
     document.getElementById('run-btn').textContent = '📤 Sending...';
-    document.getElementById('cancel-btn').disabled = false;
     updateProgress(data);
     setTimeout(() => { document.getElementById('reconnect-banner').classList.remove('show'); }, 3000);
     connectSSE(savedId);
@@ -608,32 +559,15 @@
       const res  = await fetch('/api/auth/me', { credentials: 'same-origin' });
       const data = await res.json();
       if (data.logged_in) {
-        const displayName = data.name || data.email;
-        document.getElementById('sidebar-email').textContent = displayName;
+        document.getElementById('sidebar-email').textContent = data.email;
         document.getElementById('sidebar-user').style.display = 'block';
-        document.getElementById('hdr-email').textContent = displayName;
-        document.getElementById('hdr-avatar').textContent = displayName.charAt(0).toUpperCase();
+        document.getElementById('hdr-email').textContent = data.email;
+        document.getElementById('hdr-avatar').textContent = data.email.charAt(0).toUpperCase();
       }
     } catch (e) {}
   }
   async function doLogout() {
-    try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch (e) {}
-    try { localStorage.clear(); } catch (e) {}
-    try { sessionStorage.clear(); } catch (e) {}
-    try {
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-    } catch (e) {}
-    // Best-effort: the session cookie itself is HttpOnly and already cleared
-    // by the backend logout call above — this just sweeps any other cookies.
-    try {
-      document.cookie.split(';').forEach((c) => {
-        const name = c.split('=')[0].trim();
-        if (name) document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
-      });
-    } catch (e) {}
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
     window.location.href = '/login';
   }
   loadSidebarUser();

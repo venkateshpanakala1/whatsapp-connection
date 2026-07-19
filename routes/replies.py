@@ -48,38 +48,6 @@ def update_cr_status(cr_id, status):
         except: pass
 
 
-def claim_cr_for_sending(cr_id):
-    """
-    Atomically transitions a counter-reply from 'approved' to 'sending'.
-    Returns True only for whichever caller wins the race.
-
-    This exists because more than one worker thread can end up polling the
-    same cr_id at once — most commonly when a deploy happens while a
-    template is still awaiting Meta's approval: the old container's worker
-    is still alive and polling right as the new container's
-    resume_pending_counter_replies() attaches a fresh one. If Meta approves
-    during that overlap, both threads would otherwise see APPROVED and both
-    call the send API, delivering the message twice. Only the thread whose
-    UPDATE actually matches a row (still 'approved', not already claimed)
-    is allowed to send; the other backs off.
-    """
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-            UPDATE counter_replies SET status = 'sending'
-            WHERE id = %s AND status NOT IN ('sending', 'sent', 'rejected', 'timeout')
-              AND status NOT LIKE 'send_failed%%'
-            RETURNING id
-        """, (cr_id,))
-        claimed = cur.fetchone() is not None
-        conn.commit()
-        cur.close()
-        return claimed
-    finally:
-        put_conn(conn)
-
-
 MAX_WAIT_SECONDS = 24 * 60 * 60  # safety cap so a stuck template can't loop forever
 
 
@@ -109,12 +77,6 @@ def counter_reply_worker(cr_id, phone, template_name, template_lang, creds, user
 
             if status == 'APPROVED':
                 update_cr_status(cr_id, 'approved')
-
-                # Only one concurrently-polling worker may proceed past this
-                # point — see claim_cr_for_sending()'s docstring.
-                if not claim_cr_for_sending(cr_id):
-                    return
-
                 send_res  = http.post(
                     f"{META_API}/{creds['phone_number_id']}/messages",
                     headers={
