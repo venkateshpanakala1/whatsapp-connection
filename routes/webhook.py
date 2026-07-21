@@ -61,6 +61,17 @@ def receive():
                     wamid      = msg.get('id', '')
                     msg_type   = msg.get('type', 'text')
 
+                    if msg_type == 'reaction':
+                        # Not a chat message — attaches to (or clears, if emoji
+                        # is empty) the reaction on whichever message.id it names.
+                        reaction     = msg.get('reaction') or {}
+                        target_wamid = reaction.get('message_id', '')
+                        emoji        = reaction.get('emoji', '')
+                        print(f'[WEBHOOK] reaction from={from_phone} emoji={emoji!r} target={target_wamid}')
+                        if target_wamid and user_id:
+                            update_message_reaction(target_wamid, emoji, user_id)
+                        continue
+
                     media = msg.get(msg_type) if msg_type in MEDIA_TYPES else None
 
                     if msg_type == 'text':
@@ -133,6 +144,25 @@ def update_send_log_status(wamid, status):
         cur.close()
     except Exception as e:
         print(f'[WEBHOOK] update_send_log_status error: {e}')
+    finally:
+        put_conn(conn)
+
+
+def update_message_reaction(wamid, emoji, user_id):
+    """Sets (or clears, when emoji is empty — WhatsApp's signal that a
+    reaction was removed) the reaction emoji on the message matching wamid.
+    Scoped to user_id defensively, though wamid is already globally unique."""
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            'UPDATE replies SET reaction_emoji = %s WHERE wamid = %s AND user_id = %s',
+            (emoji or None, wamid, user_id)
+        )
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        print(f'[WEBHOOK] update_message_reaction error: {e}')
     finally:
         put_conn(conn)
 

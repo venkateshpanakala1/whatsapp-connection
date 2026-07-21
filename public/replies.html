@@ -102,6 +102,20 @@
     .bubble-sent { background: #d9fdd3; align-self: flex-end; border-top-right-radius: 0; }
     .bubble-time { font-size: 11px; color: #999; text-align: right; margin-top: 4px; }
 
+    /* Reaction emoji badge — sits on the bottom-right corner of the bubble it
+       reacted to, like real WhatsApp. Bubble needs extra room below so the
+       badge (which pokes out past the bubble's own edge) doesn't collide
+       with the next message in the thread's 8px gap. */
+    .bubble-recv.has-reaction, .bubble-sent.has-reaction { margin-bottom: 10px; }
+    .msg-reaction {
+      position: absolute; right: -6px; bottom: -12px;
+      background: #fff; border: 1px solid rgba(0,0,0,0.06);
+      border-radius: 50%; width: 22px; height: 22px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 12px; line-height: 1;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    }
+
     .date-divider {
       align-self: center; margin: 4px 0 10px;
       background: rgba(255,255,255,0.9); color: #54656f;
@@ -579,12 +593,15 @@
         const bodyHtml  = renderMessageBody(m);
         const time      = dateObj ? dateObj.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
         const isMedia   = isVisualMedia(m);
-        const bubbleCls = (isOut ? 'bubble-sent' : 'bubble-recv') + (isMedia ? ' bubble-media' : '');
+        const hasReaction = !!m.reaction;
+        const bubbleCls = (isOut ? 'bubble-sent' : 'bubble-recv') + (isMedia ? ' bubble-media' : '') + (hasReaction ? ' has-reaction' : '');
         const timeCls   = isMedia ? 'bubble-time bubble-time-overlay' : 'bubble-time';
+        const reactionHtml = hasReaction ? `<span class="msg-reaction">${esc(m.reaction)}</span>` : '';
         parts.push(`
           <div class="${bubbleCls}">
             <div>${bodyHtml}</div>
             <div class="${timeCls}">${time}</div>
+            ${reactionHtml}
           </div>`);
       });
       wrap.innerHTML = parts.join('');

@@ -173,6 +173,12 @@ def init_db():
         cur.execute("ALTER TABLE send_logs             ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")
         cur.execute("ALTER TABLE replies               ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")
         cur.execute("ALTER TABLE replies               ADD COLUMN IF NOT EXISTS direction VARCHAR(4) DEFAULT 'in';")
+        # WhatsApp reactions (👍 etc.) aren't their own chat message — Meta's
+        # webhook sends them as a separate event carrying the wamid of the
+        # message being reacted to. Stored on that target row instead of as
+        # a new replies row, so it renders as a badge on the reacted message
+        # like WhatsApp itself, not as a standalone "[reaction]" bubble.
+        cur.execute("ALTER TABLE replies               ADD COLUMN IF NOT EXISTS reaction_emoji VARCHAR(16);")
         # Delivery/read tracking for bulk-send analytics — populated from WhatsApp's
         # status callbacks (sent → delivered → read), matched back to a send_logs
         # row by the message id ('wamid') Meta returned when we sent it.

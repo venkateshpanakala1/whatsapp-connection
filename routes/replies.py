@@ -328,7 +328,7 @@ def get_conversation(phone):
 
         cur.execute("""
             SELECT r.id, r.message_body, r.message_type, r.direction, r.received_at,
-                   (rm.reply_id IS NOT NULL) AS has_media
+                   (rm.reply_id IS NOT NULL) AS has_media, r.reaction_emoji
             FROM replies r
             LEFT JOIN reply_media rm ON rm.reply_id = r.id
             WHERE r.user_id = %s AND r.from_phone = %s
@@ -348,6 +348,7 @@ def get_conversation(phone):
                     # mark it so the browser converts to local time correctly.
                     'received_at':  (r[4].isoformat() + 'Z') if r[4] else '',
                     'has_media':    r[5],
+                    'reaction':     r[6] or '',
                 }
                 for r in rows
             ]
