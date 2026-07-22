@@ -94,12 +94,6 @@
       padding: 0; text-align: right;
     }
     .btn-edit-tpl:hover { text-decoration: underline; }
-    .btn-delete-tpl {
-      background: none; border: none; margin-top: 6px;
-      font-size: 11px; font-weight: 600; color: #f87171; cursor: pointer;
-      padding: 0; text-align: right; display: block;
-    }
-    .btn-delete-tpl:hover { text-decoration: underline; color: #dc2626; }
   </style>
 </head>
 <body>
@@ -163,7 +157,6 @@
       <div class="tab active" id="tpl-tab-recent" onclick="switchTplTab('recent')">Create Template</div>
       <div class="tab" id="tpl-tab-all" onclick="switchTplTab('all')">All Templates</div>
     </div>
-    <div class="alert" id="tpl-action-alert" style="max-width:none"></div>
     <div class="card-tabs card-sm" style="max-width:none">
 
       <!-- Recent Templates + Create Template -->
@@ -326,37 +319,7 @@
   </div>
 </div>
 
-<!-- Confirm modal (replaces native confirm() popups) -->
-<div class="modal-overlay" id="confirm-modal" onclick="if(event.target===this) closeConfirmModal()">
-  <div class="modal" style="width:420px">
-    <div class="modal-hdr">
-      <span class="modal-title" id="confirm-modal-title">Confirm</span>
-      <button class="modal-close" onclick="closeConfirmModal()">✕</button>
-    </div>
-    <div style="padding:20px 24px">
-      <p id="confirm-modal-message" style="color:var(--text-2);font-size:14px;line-height:1.6"></p>
-      <div style="display:flex;gap:10px;margin-top:22px">
-        <button class="btn btn-outline" style="flex:1" onclick="closeConfirmModal()">Cancel</button>
-        <button class="btn btn-danger" style="flex:1;border-color:transparent;background:#dc2626;color:#fff" id="confirm-modal-ok-btn">Confirm</button>
-      </div>
-    </div>
-  </div>
-</div>
-
 <script>
-  function showConfirm(message, onConfirm, opts) {
-    opts = opts || {};
-    document.getElementById('confirm-modal-title').textContent = opts.title || 'Confirm';
-    document.getElementById('confirm-modal-message').textContent = message;
-    const okBtn = document.getElementById('confirm-modal-ok-btn');
-    okBtn.textContent = opts.okText || 'Confirm';
-    okBtn.onclick = () => { closeConfirmModal(); onConfirm(); };
-    document.getElementById('confirm-modal').classList.add('open');
-  }
-  function closeConfirmModal() {
-    document.getElementById('confirm-modal').classList.remove('open');
-  }
-
   const API = '/api/templates';
   let uploadedHandle = '';
   let selectedFile   = null;
@@ -406,9 +369,6 @@
       const editHtml = (t.status === 'PENDING' || t.status === 'REJECTED')
         ? `<button class="btn-edit-tpl" onclick="openEditModal('${t.name}')">✎ Edit &amp; resubmit</button>`
         : '';
-      const deleteHtml = t.status === 'PENDING'
-        ? `<button class="btn-delete-tpl" onclick="deleteTemplate('${t.id}', '${esc(t.name).replace(/'/g, "\\'")}')">🗑 Delete</button>`
-        : '';
 
       return `
         <div class="tpl-card">
@@ -421,7 +381,6 @@
             <span class="badge ${badgeClass(t.status)}">${t.status}</span>
             ${statusNoteHtml}
             ${editHtml}
-            ${deleteHtml}
             ${attachHtml}
           </div>
         </div>`;
@@ -765,26 +724,6 @@
     } finally {
       btn.disabled = false; btn.textContent = 'Resubmit for Review';
     }
-  }
-
-  // Only offered for PENDING templates — deleting an APPROVED one is a
-  // bigger, more consequential action (breaks any Bulk Send config already
-  // pointing at it) that this button intentionally doesn't cover.
-  function deleteTemplate(id, name) {
-    showConfirm(`Delete template "${name}"? This cannot be undone.`, async () => {
-      try {
-        const res  = await fetch(`${API}/${encodeURIComponent(id)}?name=${encodeURIComponent(name)}`, { method: 'DELETE' });
-        const data = await res.json();
-        if (data.success) {
-          showAlert('tpl-action-alert', 'success', data.message || `Template "${name}" deleted`);
-          loadTemplates();
-        } else {
-          showAlert('tpl-action-alert', 'error', data.error || 'Failed to delete template');
-        }
-      } catch (e) {
-        showAlert('tpl-action-alert', 'error', 'Server error: ' + e.message);
-      }
-    }, { okText: 'Delete' });
   }
 
   loadSidebarStatus();
