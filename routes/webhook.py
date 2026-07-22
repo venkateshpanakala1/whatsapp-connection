@@ -69,7 +69,10 @@ def receive():
                         emoji        = reaction.get('emoji', '')
                         print(f'[WEBHOOK] reaction from={from_phone} emoji={emoji!r} target={target_wamid}')
                         if target_wamid and user_id:
-                            update_message_reaction(target_wamid, emoji, user_id)
+                            update_message_reaction(
+                                target_wamid, emoji, user_id,
+                                from_phone, profile_names.get(from_phone)
+                            )
                         continue
 
                     media = msg.get(msg_type) if msg_type in MEDIA_TYPES else None
@@ -148,23 +151,41 @@ def update_send_log_status(wamid, status):
         put_conn(conn)
 
 
-def update_message_reaction(wamid, emoji, user_id):
+def update_message_reaction(wamid, emoji, user_id, from_phone, profile_name=None):
     """Sets (or clears, when emoji is empty — WhatsApp's signal that a
     reaction was removed) the reaction emoji on the message matching wamid.
-    Scoped to user_id defensively, though wamid is already globally unique."""
+    Scoped to user_id defensively, though wamid is already globally unique.
+
+    Only a newly-added reaction sends a push notification — a removal isn't
+    worth interrupting the user for, so it's applied silently."""
     conn = get_conn()
+    row = None
     try:
         cur = conn.cursor()
-        cur.execute(
-            'UPDATE replies SET reaction_emoji = %s WHERE wamid = %s AND user_id = %s',
-            (emoji or None, wamid, user_id)
-        )
+        cur.execute("""
+            UPDATE replies SET reaction_emoji = %s WHERE wamid = %s AND user_id = %s
+            RETURNING message_body, contact_name
+        """, (emoji or None, wamid, user_id))
+        row = cur.fetchone()
         conn.commit()
         cur.close()
     except Exception as e:
         print(f'[WEBHOOK] update_message_reaction error: {e}')
     finally:
         put_conn(conn)
+
+    if row and emoji:
+        target_body, contact_name = row
+        display_name = contact_name or profile_name or from_phone
+        snippet = (target_body or '').strip()
+        if len(snippet) > 60:
+            snippet = snippet[:57] + '...'
+        notif_body = f'{emoji} to "{snippet}"' if snippet else f'Reacted {emoji}'
+        threading.Thread(
+            target=send_push_to_user,
+            args=(user_id, display_name, notif_body),
+            daemon=True
+        ).start()
 
 
 def lookup_user_by_phone_number_id(phone_number_id):
