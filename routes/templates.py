@@ -274,6 +274,35 @@ def edit_template():
         return jsonify({'error': str(e)}), 500
 
 
+# DELETE /api/templates/<template_id>?name=<name>
+# Meta's delete endpoint takes the template *name*, not its id — but a name
+# can have more than one language variant, so hsm_id (the id) is passed too
+# to delete only this exact one instead of every language sharing that name.
+@templates_bp.route('/<template_id>', methods=['DELETE'])
+def delete_template(template_id):
+    creds = get_wa_credentials(session.get('user_id'))
+    if not creds:
+        return jsonify({'error': 'WhatsApp not connected'}), 400
+
+    name = (request.args.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'Template name is required'}), 400
+
+    try:
+        res = http.delete(
+            f"{META_API}/{creds['waba_id']}/message_templates",
+            params={'name': name, 'hsm_id': template_id},
+            headers={'Authorization': f"Bearer {creds['access_token']}"},
+            timeout=30
+        )
+        data = res.json()
+        if 'error' in data:
+            return jsonify({'error': data['error']['message']}), 400
+        return jsonify({'success': True, 'message': f'Template "{name}" deleted'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 # POST /api/templates/attach-media
 # Stores a template's header image/document in our own DB so Bulk Send can
 # auto-reuse it. Meta only keeps the file we send during creation as an
