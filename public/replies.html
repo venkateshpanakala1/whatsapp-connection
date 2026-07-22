@@ -231,9 +231,10 @@
       .chat-layout.thread-open .conv-thread { display: flex; }
 
       /* Full-screen chat like WhatsApp: hide the app-level header (title,
-         email, Sign Out) while a conversation is open — only the thread's
-         own header (avatar/name/back arrow) stays visible. */
-      .page-hdr.hide-on-thread { display: none; }
+         email, Sign Out) and the search bar while a conversation is open —
+         only the thread's own header (avatar/name/back arrow) stays visible. */
+      .page-hdr.hide-on-thread,
+      .conv-search-bar.hide-on-thread { display: none; }
       body.no-scroll { overflow: hidden; }
 
       /* The bottom tab bar (just the Replies icon, in the installed app)
@@ -256,9 +257,30 @@
        `justify-content: space-between` has nothing to space against — it
        sits at the left instead of spanning the row. Make the row itself
        full-width and space its two children apart: email chip on the left,
-       Sign Out on the right. */
+       Sign Out on the right. The page title/subtitle are redundant once
+       installed as an app (the OS-level app icon/name already identifies
+       it), so they're dropped here to leave more room for the chat list. */
     @media (display-mode: standalone) {
+      .ph-titles { display: none; }
       .ph-user { width: 100%; justify-content: space-between; }
+    }
+
+    .conv-search-bar { margin: -10px 0 16px; }
+    .conv-search-bar input {
+      width: 100%; max-width: 340px; padding: 9px 16px;
+      border: 1.5px solid rgba(255,255,255,0.18); border-radius: 20px;
+      font-size: 13.5px; font-family: inherit; color: var(--text);
+      background: rgba(255,255,255,0.06); outline: none;
+      transition: all var(--t);
+    }
+    .conv-search-bar input:focus {
+      border-color: var(--g-300);
+      box-shadow: 0 0 0 3px rgba(37,211,102,0.18);
+      background: rgba(255,255,255,0.1);
+    }
+    .conv-search-bar input::placeholder { color: var(--text-3); }
+    @media (max-width: 768px) {
+      .conv-search-bar input { max-width: none; }
     }
   </style>
 </head>
@@ -298,7 +320,7 @@
 
 <div class="main">
   <div class="page-hdr">
-    <div>
+    <div class="ph-titles">
       <div class="ph-title">Replies</div>
       <div class="ph-sub">Chat with your contacts</div>
     </div>
@@ -310,6 +332,10 @@
       </div>
       <button class="btn-logout" onclick="doLogout()">Sign Out</button>
     </div>
+  </div>
+
+  <div class="conv-search-bar" id="conv-search-bar">
+    <input type="text" id="conv-search" placeholder="🔍 Search by name" oninput="renderConversationList()" />
   </div>
 
   <div class="chat-layout" id="chat-layout">
@@ -393,7 +419,22 @@
         </div>`;
       return;
     }
-    list.innerHTML = conversations.map(c => {
+
+    const query    = (document.getElementById('conv-search')?.value || '').trim().toLowerCase();
+    const filtered = query
+      ? conversations.filter(c => (c.contact_name || c.phone).toLowerCase().includes(query))
+      : conversations;
+
+    if (!filtered.length) {
+      list.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">🔍</div>
+          <div class="empty-text">No contacts matching "${esc(query)}"</div>
+        </div>`;
+      return;
+    }
+
+    list.innerHTML = filtered.map(c => {
       const name   = c.contact_name || c.phone;
       const isOut  = c.direction === 'out';
       const prefix = isOut ? 'You: ' : '';
@@ -436,6 +477,7 @@
     document.getElementById('thread-active').style.display = 'flex';
     document.getElementById('chat-layout').classList.add('thread-open');
     document.querySelector('.page-hdr').classList.add('hide-on-thread');
+    document.getElementById('conv-search-bar').classList.add('hide-on-thread');
     document.body.classList.add('no-scroll');
 
     // Push a history entry so the phone's back gesture/button closes the
@@ -622,6 +664,7 @@
   function closeThreadUI() {
     document.getElementById('chat-layout').classList.remove('thread-open');
     document.querySelector('.page-hdr').classList.remove('hide-on-thread');
+    document.getElementById('conv-search-bar').classList.remove('hide-on-thread');
     document.body.classList.remove('no-scroll');
     threadHistoryPushed = false;
   }
