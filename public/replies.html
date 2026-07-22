@@ -436,6 +436,16 @@
     currentPhone = phone;
     currentName  = name;
 
+    // A counter-reply for whichever contact was open before may still be
+    // streaming status updates — its listener must stop touching the shared
+    // step-dots/status-bar/thread-input the moment we switch contacts, or a
+    // status meant for the old chat (e.g. "✓ Message sent successfully!")
+    // bleeds into this one, and can even wipe out a draft being typed here.
+    // The counter-reply itself is unaffected and keeps running server-side;
+    // the cr-active check below reconnects to it if *this* contact turns
+    // out to be the one with the in-flight job.
+    if (crEventSource) { crEventSource.close(); crEventSource = null; }
+
     document.getElementById('thread-empty').style.display = 'none';
     document.getElementById('thread-active').style.display = 'flex';
     document.getElementById('chat-layout').classList.add('thread-open');
