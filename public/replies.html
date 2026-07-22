@@ -633,6 +633,7 @@
   // every other reply, so sending another one never has to wait.
 
   function crStatusLabel(status) {
+    if (status === 'submitting')                        return 'Sending…';
     if (status === 'creating' || status === 'resuming') return 'Creating template…';
     if (status === 'pending_approval')                  return 'Waiting for approval…';
     if (status === 'approved')                          return 'Approved — sending…';
@@ -654,14 +655,20 @@
       </div>`;
   }
 
-  // Full re-render of just the pending bubbles — used when one is newly
-  // added (send, or reconnecting to several on reopen). In-flight status
-  // ticks use updatePendingBubbleDOM() instead so they don't touch anything
-  // else in the thread.
+  // Full re-render of just the pending bubbles — used only when reconnecting
+  // to several at once on reopening a thread. A single new bubble (sending
+  // a reply) uses appendPendingBubble() instead, so it doesn't disturb any
+  // other reply's already-rendered bubble.
   function renderPendingBubbles() {
     const wrap = document.getElementById('thread-messages');
     wrap.querySelectorAll('.bubble-pending').forEach(el => el.remove());
     wrap.insertAdjacentHTML('beforeend', pendingReplies.map(renderPendingBubbleHtml).join(''));
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  function appendPendingBubble(p) {
+    const wrap = document.getElementById('thread-messages');
+    wrap.insertAdjacentHTML('beforeend', renderPendingBubbleHtml(p));
     wrap.scrollTop = wrap.scrollHeight;
   }
 
@@ -756,6 +763,17 @@
     document.getElementById('reply-textarea').value = '';
     autoResize(document.getElementById('reply-textarea'));
 
+    // The /counter-reply call has to create and register a throwaway
+    // template with Meta before it can even respond, which can take a few
+    // real seconds — waiting for that response before showing anything
+    // would leave a visible gap where the message looks like it never sent.
+    // So the bubble goes up immediately under a temporary id, and gets
+    // upgraded in place to the real cr_id once the server responds —
+    // same DOM node throughout, never removed and re-added.
+    const tempId = 'tmp_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+    pendingReplies.push({ cr_id: tempId, text, status: 'submitting' });
+    appendPendingBubble(pendingReplies[pendingReplies.length - 1]);
+
     try {
       const res  = await fetch(`${API}/counter-reply`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -766,21 +784,41 @@
         }),
       });
       const data = await res.json();
-      if (phoneAtSend !== currentPhone) return; // user moved to another chat while this was in flight
+
+      const placeholder = pendingReplies.find(p => p.cr_id === tempId);
+      if (phoneAtSend !== currentPhone) return; // thread was already reset by openConversation
+
       if (!data.success) {
-        showToast('Failed: ' + (data.error || 'Unknown error'));
+        if (placeholder) {
+          placeholder.status = 'send_failed: ' + (data.error || 'Unknown error');
+          updatePendingBubbleDOM(tempId, placeholder.status);
+        }
         return;
       }
+
       // A double-click (or a network retry) resending the identical text
-      // gets the same cr_id back from the server's own dedupe check —
-      // guard against pushing a second bubble for it.
-      if (!pendingReplies.some(p => p.cr_id === data.cr_id)) {
-        pendingReplies.push({ cr_id: data.cr_id, text, status: 'creating' });
-        renderPendingBubbles();
+      // gets the same real cr_id back from the server's own dedupe check —
+      // drop this duplicate placeholder instead of showing two bubbles for
+      // the one reply.
+      if (pendingReplies.some(p => p !== placeholder && p.cr_id === data.cr_id)) {
+        pendingReplies = pendingReplies.filter(p => p !== placeholder);
+        document.querySelector(`.bubble-pending[data-cr-id="${tempId}"]`)?.remove();
+      } else if (placeholder) {
+        placeholder.cr_id  = data.cr_id;
+        placeholder.status = 'creating';
+        const bubble = document.querySelector(`.bubble-pending[data-cr-id="${tempId}"]`);
+        if (bubble) bubble.setAttribute('data-cr-id', data.cr_id);
+        updatePendingBubbleDOM(data.cr_id, 'creating');
       }
       attachCRStream(data.cr_id);
     } catch (e) {
-      if (phoneAtSend === currentPhone) showToast('Server error: ' + e.message);
+      if (phoneAtSend === currentPhone) {
+        const placeholder = pendingReplies.find(p => p.cr_id === tempId);
+        if (placeholder) {
+          placeholder.status = 'send_failed: ' + e.message;
+          updatePendingBubbleDOM(tempId, placeholder.status);
+        }
+      }
     }
   }
 
