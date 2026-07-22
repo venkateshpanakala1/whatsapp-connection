@@ -5,6 +5,7 @@ from routes.webhook import save_message
 import json
 import time
 import threading
+import secrets
 
 replies_bp = Blueprint('replies', __name__)
 META_API   = 'https://graph.facebook.com/v22.0'
@@ -153,31 +154,46 @@ def counter_reply_worker(cr_id, phone, template_name, template_lang, creds, user
     update_cr_status(cr_id, 'timeout')
 
 
-def get_active_counter_reply(user_id, phone, message_text=None):
-    """Most recent non-terminal counter-reply for this phone (optionally
-    matching an exact message_text, to dedupe accidental double-sends)."""
+def get_active_counter_reply(user_id, phone, message_text):
+    """Most recent non-terminal counter-reply for this phone matching an
+    exact message_text — used only to dedupe accidental double-sends of the
+    identical text (e.g. a double-click), not to limit how many *different*
+    replies can be in flight to the same contact at once."""
     conn = get_conn()
     try:
         cur = conn.cursor()
-        if message_text is not None:
-            cur.execute("""
-                SELECT id, template_name, status FROM counter_replies
-                WHERE user_id = %s AND phone = %s AND message_text = %s
-                  AND status NOT IN ('sent', 'rejected', 'timeout')
-                  AND status NOT LIKE 'send_failed%%'
-                ORDER BY id DESC LIMIT 1
-            """, (user_id, phone, message_text))
-        else:
-            cur.execute("""
-                SELECT id, template_name, status FROM counter_replies
-                WHERE user_id = %s AND phone = %s
-                  AND status NOT IN ('sent', 'rejected', 'timeout')
-                  AND status NOT LIKE 'send_failed%%'
-                ORDER BY id DESC LIMIT 1
-            """, (user_id, phone))
+        cur.execute("""
+            SELECT id, template_name, status FROM counter_replies
+            WHERE user_id = %s AND phone = %s AND message_text = %s
+              AND status NOT IN ('sent', 'rejected', 'timeout')
+              AND status NOT LIKE 'send_failed%%'
+            ORDER BY id DESC LIMIT 1
+        """, (user_id, phone, message_text))
         row = cur.fetchone()
         cur.close()
         return row
+    finally:
+        put_conn(conn)
+
+
+def get_active_counter_replies(user_id, phone):
+    """Every non-terminal counter-reply for this phone, oldest first — lets
+    the UI reconstruct all currently in-flight reply bubbles (not just the
+    newest) when a thread is reopened, since more than one can be in flight
+    to the same contact at once."""
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, template_name, status, message_text FROM counter_replies
+            WHERE user_id = %s AND phone = %s
+              AND status NOT IN ('sent', 'rejected', 'timeout')
+              AND status NOT LIKE 'send_failed%%'
+            ORDER BY id ASC
+        """, (user_id, phone))
+        rows = cur.fetchall()
+        cur.close()
+        return rows
     finally:
         put_conn(conn)
 
@@ -416,8 +432,12 @@ def counter_reply():
     if not creds:
         return jsonify({'error': 'WhatsApp not connected'}), 400
 
+    # A random suffix (not a timestamp) — the UI now lets multiple replies to
+    # the same contact go out back-to-back, so two landing in the same second
+    # would otherwise generate the identical template name and Meta would
+    # reject the second one as a duplicate.
     digits        = ''.join(c for c in phone if c.isdigit())[-8:]
-    template_name = f"cr_{digits}_{str(int(time.time()))[-6:]}"
+    template_name = f"cr_{digits}_{secrets.token_hex(3)}"
     template_lang = 'en'
 
     try:
@@ -466,19 +486,23 @@ def counter_reply():
 
 
 # GET /api/replies/cr-active?phone=<phone>
-# Lets the Replies UI reconnect to an in-progress counter-reply for a contact
-# when a reply modal is (re)opened — e.g. after a refresh or closing the tab —
-# instead of losing track of a job that's still running server-side.
+# Lets the Replies UI reconnect to every in-progress counter-reply for a
+# contact when its thread is reopened — e.g. after switching to another
+# chat and back, or a refresh — instead of losing track of jobs still
+# running server-side. More than one can be active at once for the same
+# contact, so this returns all of them, not just the newest.
 @replies_bp.route('/cr-active', methods=['GET'])
 def cr_active():
     user_id = session.get('user_id')
     phone   = (request.args.get('phone') or '').strip()
     if not user_id or not phone:
-        return jsonify({'active': False})
-    row = get_active_counter_reply(user_id, phone)
-    if not row:
-        return jsonify({'active': False})
-    return jsonify({'active': True, 'cr_id': row[0], 'template_name': row[1], 'status': row[2]})
+        return jsonify({'active': False, 'jobs': []})
+    rows = get_active_counter_replies(user_id, phone)
+    jobs = [
+        {'cr_id': r[0], 'template_name': r[1], 'status': r[2], 'message_text': r[3]}
+        for r in rows
+    ]
+    return jsonify({'active': bool(jobs), 'jobs': jobs})
 
 
 # GET /api/replies/cr-status/<cr_id>  — SSE stream

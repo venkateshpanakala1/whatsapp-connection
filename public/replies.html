@@ -181,27 +181,12 @@
       color: #128c7e; font-weight: 600; text-decoration: none;
     }
 
-    .step-dots {
-      display: none; justify-content: center; gap: 8px;
-      padding: 10px 16px; background: rgba(255,255,255,0.04); border-top: 1px solid var(--border);
-    }
-    .step-dots.show { display: flex; }
-    .step-dot { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-3); }
-    .step-dot .dot { width: 10px; height: 10px; border-radius: 50%; background: #e5e7eb; flex-shrink: 0; transition: all var(--t); }
-    .step-dot.active .dot { background: var(--g-300); animation: pulseDot 1s infinite; }
-    .step-dot.done   .dot { background: var(--g-500); }
-    .step-dot.error  .dot { background: #ef4444; }
-    .step-dot.active { color: var(--g-500); font-weight: 700; }
-    .step-dot.done   { color: var(--g-500); }
-    .step-dot.error  { color: #ef4444; }
-
-    .cr-status-bar { padding: 9px 16px; font-size: 12.5px; text-align: center; display: none; }
-    .cr-status-bar.show { display: block; }
-    .cr-status-bar.step-creating { background: #fef9c3; color: #92400e; }
-    .cr-status-bar.step-pending  { background: #eff6ff; color: #1d4ed8; }
-    .cr-status-bar.step-approved { background: #d1fae5; color: #065f46; }
-    .cr-status-bar.step-sent     { background: #d1fae5; color: #065f46; font-weight: 700; }
-    .cr-status-bar.step-error    { background: #fef2f2; color: #991b1b; }
+    /* Per-message counter-reply progress — replaces the old single shared
+       status bar. Each in-flight reply gets its own bubble immediately on
+       send, with its own status line underneath that updates in place as
+       its SSE stream progresses, independently of any other reply. */
+    .bubble-pending .bubble-time { color: var(--g-500); font-style: italic; font-weight: 600; }
+    .bubble-pending-error .bubble-time { color: #dc2626; font-style: normal; }
 
     .thread-input {
       padding: 12px 14px; border-top: 1px solid var(--border);
@@ -356,16 +341,6 @@
           </div>
         </div>
         <div class="thread-messages" id="thread-messages"></div>
-        <div class="step-dots" id="step-dots">
-          <div class="step-dot" id="step-1"><span class="dot"></span>Creating</div>
-          <span style="color:rgba(255,255,255,0.3);font-size:14px">›</span>
-          <div class="step-dot" id="step-2"><span class="dot"></span>Approval</div>
-          <span style="color:rgba(255,255,255,0.3);font-size:14px">›</span>
-          <div class="step-dot" id="step-3"><span class="dot"></span>Sending</div>
-          <span style="color:rgba(255,255,255,0.3);font-size:14px">›</span>
-          <div class="step-dot" id="step-4"><span class="dot"></span>Sent</div>
-        </div>
-        <div class="cr-status-bar" id="cr-status-bar"></div>
         <div class="thread-input" id="thread-input">
           <textarea id="reply-textarea" placeholder="Type a message..." rows="1" oninput="autoResize(this)"></textarea>
           <button id="reply-send-btn" onclick="sendReply()" title="Send">➤</button>
@@ -380,7 +355,12 @@
   let conversations   = [];
   let currentPhone    = null;
   let currentName     = '';
-  let crEventSource   = null;
+
+  // Counter-replies in flight for the currently open thread only — each is
+  // its own bubble with its own status, tracked independently so multiple
+  // can be sent back-to-back without one affecting another.
+  let pendingReplies = [];        // [{ cr_id, text, status }]
+  let crStreams      = new Map(); // cr_id -> EventSource
 
   async function loadSidebarStatus() {
     try {
@@ -463,15 +443,14 @@
     currentPhone = phone;
     currentName  = name;
 
-    // A counter-reply for whichever contact was open before may still be
-    // streaming status updates — its listener must stop touching the shared
-    // step-dots/status-bar/thread-input the moment we switch contacts, or a
-    // status meant for the old chat (e.g. "✓ Message sent successfully!")
-    // bleeds into this one, and can even wipe out a draft being typed here.
-    // The counter-reply itself is unaffected and keeps running server-side;
-    // the cr-active check below reconnects to it if *this* contact turns
-    // out to be the one with the in-flight job.
-    if (crEventSource) { crEventSource.close(); crEventSource = null; }
+    // Every counter-reply stream belongs to whichever contact was open
+    // before — none of them are relevant to this contact's screen, so stop
+    // listening to all of them now. Each one keeps running server-side
+    // regardless; the cr-active check below reconnects to whichever ones
+    // belong to *this* contact and rebuilds their bubbles.
+    crStreams.forEach(es => es.close());
+    crStreams.clear();
+    pendingReplies = [];
 
     document.getElementById('thread-empty').style.display = 'none';
     document.getElementById('thread-active').style.display = 'flex';
@@ -495,10 +474,6 @@
     document.getElementById('thread-phone').textContent   = phone;
     document.getElementById('reply-textarea').value = '';
     document.getElementById('reply-send-btn').disabled = false;
-    document.getElementById('thread-input').style.display = 'flex';
-    document.getElementById('step-dots').classList.remove('show');
-    document.getElementById('cr-status-bar').classList.remove('show');
-    resetSteps();
 
     // Optimistically clear the unread badge — the server marks it read too.
     const conv = conversations.find(c => c.phone === phone);
@@ -508,20 +483,16 @@
     await loadConversationMessages(phone);
     document.getElementById('reply-textarea').focus();
 
-    // A counter-reply to this contact may already be running server-side —
-    // reconnect to it instead of losing track of it.
+    // Reconnect to every counter-reply already in flight for this contact
+    // (there can be more than one), rebuilding each one's bubble+status.
     try {
       const res    = await fetch(`${API}/cr-active?phone=${encodeURIComponent(phone)}`);
       const active = await res.json();
-      if (active.active) {
-        document.getElementById('thread-input').style.display = 'none';
-        document.getElementById('step-dots').classList.add('show');
-        setStep(1, 'active');
-        showStatus('Reconnecting to a reply already in progress…', 'step-pending');
-        if (crEventSource) crEventSource.close();
-        crEventSource = new EventSource(`${API}/cr-status/${active.cr_id}`);
-        crEventSource.onmessage = e => { handleCRStatus(JSON.parse(e.data).status); };
+      for (const job of (active.jobs || [])) {
+        pendingReplies.push({ cr_id: job.cr_id, text: job.message_text, status: job.status });
+        attachCRStream(job.cr_id);
       }
+      if (active.jobs && active.jobs.length) renderPendingBubbles();
     } catch (e) {}
   }
 
@@ -642,7 +613,7 @@
             ${reactionHtml}
           </div>`);
       });
-      wrap.innerHTML = parts.join('');
+      wrap.innerHTML = parts.join('') + pendingReplies.map(renderPendingBubbleHtml).join('');
       wrap.scrollTop = wrap.scrollHeight;
 
       // Images/videos load asynchronously — if the newest message is media,
@@ -654,6 +625,91 @@
         el.addEventListener(evt, () => { wrap.scrollTop = wrap.scrollHeight; }, { once: true });
       });
     } catch (e) {}
+  }
+
+  // ── Per-message counter-reply progress ──────────────────────────────
+  // Each in-flight reply is its own bubble with its own status line, its
+  // own SSE stream, and its own entry in pendingReplies — independent of
+  // every other reply, so sending another one never has to wait.
+
+  function crStatusLabel(status) {
+    if (status === 'creating' || status === 'resuming') return 'Creating template…';
+    if (status === 'pending_approval')                  return 'Waiting for approval…';
+    if (status === 'approved')                          return 'Approved — sending…';
+    if (status === 'sending')                            return 'Sending…';
+    if (status === 'rejected')                           return '✕ Template rejected by Meta';
+    if (status === 'timeout')                             return '✕ Approval timed out';
+    if (status && status.startsWith('send_failed'))
+      return '✕ ' + (status.replace('send_failed: ', '') || 'Send failed');
+    return '';
+  }
+
+  function renderPendingBubbleHtml(p) {
+    const label   = crStatusLabel(p.status);
+    const isError = label.startsWith('✕');
+    return `
+      <div class="bubble-sent bubble-pending${isError ? ' bubble-pending-error' : ''}" data-cr-id="${p.cr_id}">
+        <div>${esc(p.text)}</div>
+        <div class="bubble-time">${esc(label)}</div>
+      </div>`;
+  }
+
+  // Full re-render of just the pending bubbles — used when one is newly
+  // added (send, or reconnecting to several on reopen). In-flight status
+  // ticks use updatePendingBubbleDOM() instead so they don't touch anything
+  // else in the thread.
+  function renderPendingBubbles() {
+    const wrap = document.getElementById('thread-messages');
+    wrap.querySelectorAll('.bubble-pending').forEach(el => el.remove());
+    wrap.insertAdjacentHTML('beforeend', pendingReplies.map(renderPendingBubbleHtml).join(''));
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+
+  function updatePendingBubbleDOM(cr_id, status) {
+    const bubble = document.querySelector(`.bubble-pending[data-cr-id="${cr_id}"]`);
+    if (!bubble) return;
+    const label  = crStatusLabel(status);
+    const timeEl = bubble.querySelector('.bubble-time');
+    if (timeEl) timeEl.textContent = label;
+    bubble.classList.toggle('bubble-pending-error', label.startsWith('✕'));
+  }
+
+  function attachCRStream(cr_id) {
+    if (crStreams.has(cr_id)) return;
+    const es = new EventSource(`${API}/cr-status/${cr_id}`);
+    es.onmessage = e => { handlePendingStatus(cr_id, JSON.parse(e.data).status); };
+    crStreams.set(cr_id, es);
+  }
+
+  function detachCRStream(cr_id) {
+    const es = crStreams.get(cr_id);
+    if (es) { es.close(); crStreams.delete(cr_id); }
+  }
+
+  function handlePendingStatus(cr_id, status) {
+    const item = pendingReplies.find(p => p.cr_id === cr_id);
+    if (!item) return; // contact switched away — no longer tracked here
+    item.status = status;
+
+    const terminal = status === 'sent' || status === 'rejected' || status === 'timeout'
+      || (status && status.startsWith('send_failed'));
+
+    if (!terminal) { updatePendingBubbleDOM(cr_id, status); return; }
+
+    detachCRStream(cr_id);
+
+    if (status === 'sent') {
+      // The real message now exists server-side — drop the optimistic
+      // bubble and resync from the DB so it becomes authoritative, without
+      // touching any other still-pending reply.
+      pendingReplies = pendingReplies.filter(p => p.cr_id !== cr_id);
+      loadConversationMessages(currentPhone);
+      loadConversations();
+    } else {
+      // Failed — leave the bubble visible with the error so it's clear
+      // this specific message never went out.
+      updatePendingBubbleDOM(cr_id, status);
+    }
   }
 
   let threadHistoryPushed = false;
@@ -689,93 +745,43 @@
     el.style.height = Math.min(el.scrollHeight, 120) + 'px';
   }
 
+  // Sends immediately and returns — the textarea and send button are never
+  // blocked, so another message can be sent right away while this one is
+  // still creating/awaiting approval/sending in the background.
   async function sendReply() {
     const text = document.getElementById('reply-textarea').value.trim();
     if (!text || !currentPhone) return;
-    document.getElementById('reply-send-btn').disabled = true;
-    document.getElementById('thread-input').style.display = 'none';
-    document.getElementById('step-dots').classList.add('show');
-    setStep(1, 'active');
-    showStatus('Creating template…', 'step-creating');
+    const phoneAtSend = currentPhone; // guard against a contact switch mid-request
+
+    document.getElementById('reply-textarea').value = '';
+    autoResize(document.getElementById('reply-textarea'));
+
     try {
       const res  = await fetch(`${API}/counter-reply`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          phone:        currentPhone,
+          phone:        phoneAtSend,
           contact_name: currentName || '',
           message_text: text,
         }),
       });
       const data = await res.json();
+      if (phoneAtSend !== currentPhone) return; // user moved to another chat while this was in flight
       if (!data.success) {
-        setStep(1, 'error');
-        showStatus('Failed: ' + (data.error || 'Unknown error'), 'step-error');
-        document.getElementById('thread-input').style.display = 'flex';
-        document.getElementById('reply-send-btn').disabled = false;
+        showToast('Failed: ' + (data.error || 'Unknown error'));
         return;
       }
-      setStep(1, 'done'); setStep(2, 'active');
-      showStatus('Waiting for Meta to approve the template…', 'step-pending');
-      if (crEventSource) crEventSource.close();
-      crEventSource = new EventSource(`${API}/cr-status/${data.cr_id}`);
-      crEventSource.onmessage = e => { handleCRStatus(JSON.parse(e.data).status); };
+      // A double-click (or a network retry) resending the identical text
+      // gets the same cr_id back from the server's own dedupe check —
+      // guard against pushing a second bubble for it.
+      if (!pendingReplies.some(p => p.cr_id === data.cr_id)) {
+        pendingReplies.push({ cr_id: data.cr_id, text, status: 'creating' });
+        renderPendingBubbles();
+      }
+      attachCRStream(data.cr_id);
     } catch (e) {
-      setStep(1, 'error');
-      showStatus('Server error: ' + e.message, 'step-error');
-      document.getElementById('thread-input').style.display = 'flex';
-      document.getElementById('reply-send-btn').disabled = false;
+      if (phoneAtSend === currentPhone) showToast('Server error: ' + e.message);
     }
-  }
-
-  function handleCRStatus(status) {
-    if (status === 'creating' || status === 'resuming') {
-      setStep(1, 'active');
-      showStatus('Creating template…', 'step-creating');
-    } else if (status === 'pending_approval') {
-      setStep(1,'done'); setStep(2,'active');
-      showStatus('Waiting for Meta to approve the template…', 'step-pending');
-    } else if (status === 'approved') {
-      setStep(2,'done'); setStep(3,'active');
-      showStatus('Template approved! Sending message…', 'step-approved');
-    } else if (status === 'sent') {
-      setStep(3,'done'); setStep(4,'done');
-      showStatus('✓ Message sent successfully!', 'step-sent');
-      if (crEventSource) { crEventSource.close(); crEventSource = null; }
-      document.getElementById('reply-textarea').value = '';
-      loadConversationMessages(currentPhone);
-      loadConversations();
-      setTimeout(() => {
-        document.getElementById('step-dots').classList.remove('show');
-        document.getElementById('cr-status-bar').classList.remove('show');
-        document.getElementById('thread-input').style.display = 'flex';
-        document.getElementById('reply-send-btn').disabled = false;
-      }, 1200);
-    } else if (status === 'rejected') {
-      setStep(2,'error');
-      showStatus('Template was rejected by Meta.', 'step-error');
-      if (crEventSource) { crEventSource.close(); crEventSource = null; }
-      document.getElementById('thread-input').style.display = 'flex';
-      document.getElementById('reply-send-btn').disabled = false;
-    } else if (status === 'timeout') {
-      setStep(2,'error');
-      showStatus('Meta did not approve the template within 24 hours.', 'step-error');
-      if (crEventSource) { crEventSource.close(); crEventSource = null; }
-      document.getElementById('thread-input').style.display = 'flex';
-      document.getElementById('reply-send-btn').disabled = false;
-    } else if (status && status.startsWith('send_failed')) {
-      setStep(3,'error');
-      showStatus('Send failed: ' + status.replace('send_failed: ',''), 'step-error');
-      if (crEventSource) { crEventSource.close(); crEventSource = null; }
-      document.getElementById('thread-input').style.display = 'flex';
-      document.getElementById('reply-send-btn').disabled = false;
-    }
-  }
-
-  function setStep(n, state) { document.getElementById(`step-${n}`).className = `step-dot ${state}`; }
-  function resetSteps() { [1,2,3,4].forEach(n => setStep(n,'')); }
-  function showStatus(msg, cls) {
-    const el = document.getElementById('cr-status-bar');
-    el.textContent = msg; el.className = `cr-status-bar show ${cls}`;
   }
 
   function esc(str) {
