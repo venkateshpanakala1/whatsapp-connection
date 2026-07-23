@@ -200,6 +200,7 @@
             <select id="tpl-header-type" onchange="onHeaderTypeChange(this.value)">
               <option value="NONE">No Header (Text only)</option>
               <option value="IMAGE">Image</option>
+              <option value="VIDEO">Video</option>
               <option value="DOCUMENT">PDF / Document</option>
             </select>
           </div>
@@ -501,6 +502,12 @@
       hint.textContent = 'JPG, PNG, WEBP up to 5MB';
       inp.accept = 'image/jpeg,image/png,image/webp';
       fnameGrp.style.display = 'none';
+    } else if (val === 'VIDEO') {
+      area.classList.add('active');
+      icon.textContent = '🎬';
+      hint.textContent = 'MP4, 3GP up to 16MB';
+      inp.accept = 'video/mp4,video/3gpp';
+      fnameGrp.style.display = 'none';
     } else if (val === 'DOCUMENT') {
       area.classList.add('active');
       icon.textContent = '📄';
@@ -627,6 +634,11 @@
       headerHtml = imgSrc
         ? `<img src="${imgSrc}" style="width:100%;height:auto;display:block;" />`
         : `<div class="wa-header-image"><span class="hicon">📷</span>Image Header</div>`;
+    } else if (headerType === 'VIDEO') {
+      const vidSrc = selectedFile ? URL.createObjectURL(selectedFile) : null;
+      headerHtml = vidSrc
+        ? `<video src="${vidSrc}" controls style="width:100%;height:auto;display:block;"></video>`
+        : `<div class="wa-header-image"><span class="hicon">🎬</span>Video Header</div>`;
     } else if (headerType === 'DOCUMENT') {
       headerHtml = `
         <div class="wa-header-doc">

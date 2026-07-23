@@ -145,7 +145,7 @@ def create_template():
     name          = (body.get('name') or '').strip().lower().replace(' ', '_')
     category      = body.get('category', 'MARKETING')
     language      = body.get('language', 'en')
-    header_type   = body.get('header_type', 'NONE')   # NONE / IMAGE / DOCUMENT
+    header_type   = body.get('header_type', 'NONE')   # NONE / IMAGE / VIDEO / DOCUMENT
     header_handle = body.get('header_handle', '')
     body_text     = (body.get('body_text') or '').strip()
     footer_text   = (body.get('footer_text') or '').strip()
@@ -156,7 +156,7 @@ def create_template():
     # Build Meta API payload
     components = []
 
-    if header_type in ('IMAGE', 'DOCUMENT') and header_handle:
+    if header_type in ('IMAGE', 'VIDEO', 'DOCUMENT') and header_handle:
         components.append({
             'type': 'HEADER',
             'format': header_type,
