@@ -42,10 +42,10 @@ def get_app_id(access_token):
 # Templates" tab can render everything without a second round trip.
 @templates_bp.route('/list', methods=['GET'])
 def list_templates():
-    creds = get_wa_credentials(session.get('user_id'))
-    if not creds:
-        return jsonify({'error': 'WhatsApp not connected'}), 400
     try:
+        creds = get_wa_credentials(session.get('user_id'))
+        if not creds:
+            return jsonify({'error': 'WhatsApp not connected'}), 400
         all_templates = []
         url     = f"{META_API}/{creds['waba_id']}/message_templates"
         params  = {'limit': 100, 'fields': 'id,name,category,language,status,components,created_time,rejected_reason'}
@@ -75,23 +75,23 @@ def list_templates():
 # POST /api/templates/upload-media
 @templates_bp.route('/upload-media', methods=['POST'])
 def upload_media():
-    creds = get_wa_credentials(session.get('user_id'))
-    if not creds:
-        return jsonify({'error': 'WhatsApp not connected'}), 400
-
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-
-    file = request.files['file']
-    file_data = file.read()
-    file_size = len(file_data)
-    mime_type = file.mimetype
-
-    app_id = get_app_id(creds['access_token'])
-    if not app_id:
-        return jsonify({'error': 'Could not get App ID from token'}), 400
-
     try:
+        creds = get_wa_credentials(session.get('user_id'))
+        if not creds:
+            return jsonify({'error': 'WhatsApp not connected'}), 400
+
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        file_data = file.read()
+        file_size = len(file_data)
+        mime_type = file.mimetype
+
+        app_id = get_app_id(creds['access_token'])
+        if not app_id:
+            return jsonify({'error': 'Could not get App ID from token'}), 400
+
         # Step 1: Create upload session
         session_res = http.post(
             f"{META_API}/{app_id}/uploads",
@@ -136,46 +136,46 @@ def upload_media():
 # POST /api/templates/create
 @templates_bp.route('/create', methods=['POST'])
 def create_template():
-    user_id = session.get('user_id')
-    creds = get_wa_credentials(user_id)
-    if not creds:
-        return jsonify({'error': 'WhatsApp not connected'}), 400
-
-    body = request.get_json()
-    name          = (body.get('name') or '').strip().lower().replace(' ', '_')
-    category      = body.get('category', 'MARKETING')
-    language      = body.get('language', 'en')
-    header_type   = body.get('header_type', 'NONE')   # NONE / IMAGE / VIDEO / DOCUMENT
-    header_handle = body.get('header_handle', '')
-    body_text     = (body.get('body_text') or '').strip()
-    footer_text   = (body.get('footer_text') or '').strip()
-
-    if not name or not body_text:
-        return jsonify({'error': 'Template name and body text are required'}), 400
-
-    # Build Meta API payload
-    components = []
-
-    if header_type in ('IMAGE', 'VIDEO', 'DOCUMENT') and header_handle:
-        components.append({
-            'type': 'HEADER',
-            'format': header_type,
-            'example': {'header_handle': [header_handle]}
-        })
-
-    components.append({'type': 'BODY', 'text': body_text})
-
-    if footer_text:
-        components.append({'type': 'FOOTER', 'text': footer_text})
-
-    payload = {
-        'name': name,
-        'category': category,
-        'language': language,
-        'components': components
-    }
-
     try:
+        user_id = session.get('user_id')
+        creds = get_wa_credentials(user_id)
+        if not creds:
+            return jsonify({'error': 'WhatsApp not connected'}), 400
+
+        body = request.get_json()
+        name          = (body.get('name') or '').strip().lower().replace(' ', '_')
+        category      = body.get('category', 'MARKETING')
+        language      = body.get('language', 'en')
+        header_type   = body.get('header_type', 'NONE')   # NONE / IMAGE / VIDEO / DOCUMENT
+        header_handle = body.get('header_handle', '')
+        body_text     = (body.get('body_text') or '').strip()
+        footer_text   = (body.get('footer_text') or '').strip()
+
+        if not name or not body_text:
+            return jsonify({'error': 'Template name and body text are required'}), 400
+
+        # Build Meta API payload
+        components = []
+
+        if header_type in ('IMAGE', 'VIDEO', 'DOCUMENT') and header_handle:
+            components.append({
+                'type': 'HEADER',
+                'format': header_type,
+                'example': {'header_handle': [header_handle]}
+            })
+
+        components.append({'type': 'BODY', 'text': body_text})
+
+        if footer_text:
+            components.append({'type': 'FOOTER', 'text': footer_text})
+
+        payload = {
+            'name': name,
+            'category': category,
+            'language': language,
+            'components': components
+        }
+
         res = http.post(
             f"{META_API}/{creds['waba_id']}/message_templates",
             headers={
@@ -226,30 +226,30 @@ def create_template():
 # dropped from the template.
 @templates_bp.route('/edit', methods=['POST'])
 def edit_template():
-    creds = get_wa_credentials(session.get('user_id'))
-    if not creds:
-        return jsonify({'error': 'WhatsApp not connected'}), 400
-
-    body        = request.get_json()
-    template_id = (body.get('id') or '').strip()
-    category    = (body.get('category') or '').strip().upper()
-    body_text   = (body.get('body_text') or '').strip()
-    footer_text = (body.get('footer_text') or '').strip()
-    header_component = body.get('header_component')  # unchanged pass-through, or None
-
-    if not template_id or not body_text:
-        return jsonify({'error': 'Template id and body text are required'}), 400
-    if len(body_text) > 1024:
-        return jsonify({'error': 'Body exceeds 1024 characters'}), 400
-
-    components = []
-    if header_component:
-        components.append(header_component)
-    components.append({'type': 'BODY', 'text': body_text})
-    if footer_text:
-        components.append({'type': 'FOOTER', 'text': footer_text})
-
     try:
+        creds = get_wa_credentials(session.get('user_id'))
+        if not creds:
+            return jsonify({'error': 'WhatsApp not connected'}), 400
+
+        body        = request.get_json()
+        template_id = (body.get('id') or '').strip()
+        category    = (body.get('category') or '').strip().upper()
+        body_text   = (body.get('body_text') or '').strip()
+        footer_text = (body.get('footer_text') or '').strip()
+        header_component = body.get('header_component')  # unchanged pass-through, or None
+
+        if not template_id or not body_text:
+            return jsonify({'error': 'Template id and body text are required'}), 400
+        if len(body_text) > 1024:
+            return jsonify({'error': 'Body exceeds 1024 characters'}), 400
+
+        components = []
+        if header_component:
+            components.append(header_component)
+        components.append({'type': 'BODY', 'text': body_text})
+        if footer_text:
+            components.append({'type': 'FOOTER', 'text': footer_text})
+
         res = http.post(
             f"{META_API}/{template_id}",
             headers={
@@ -281,26 +281,27 @@ def edit_template():
 # keep our own copy and serve it back by URL at send time.
 @templates_bp.route('/attach-media', methods=['POST'])
 def attach_media():
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({'error': 'Not logged in'}), 401
-
-    name = (request.form.get('name') or '').strip().lower()
-    if not name:
-        return jsonify({'error': 'Template name is required'}), 400
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-
-    file      = request.files['file']
-    data      = file.read()
-    mime_type = file.mimetype
-    # Prefer a filename the user typed for this attachment (e.g. a friendlier
-    # display name for a document header); fall back to the uploaded file's name.
-    filename  = (request.form.get('filename') or file.filename or '').strip()
-    token     = secrets.token_urlsafe(16)
-
-    conn = get_conn()
+    conn = None
     try:
+        user_id = session.get('user_id')
+        if not user_id:
+            return jsonify({'error': 'Not logged in'}), 401
+
+        name = (request.form.get('name') or '').strip().lower()
+        if not name:
+            return jsonify({'error': 'Template name is required'}), 400
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        file      = request.files['file']
+        data      = file.read()
+        mime_type = file.mimetype
+        # Prefer a filename the user typed for this attachment (e.g. a friendlier
+        # display name for a document header); fall back to the uploaded file's name.
+        filename  = (request.form.get('filename') or file.filename or '').strip()
+        token     = secrets.token_urlsafe(16)
+
+        conn = get_conn()
         cur = conn.cursor()
         cur.execute("""
             INSERT INTO template_media (user_id, template_name, token, mime_type, filename, data)
@@ -313,10 +314,12 @@ def attach_media():
         cur.close()
         return jsonify({'success': True})
     except Exception as e:
-        conn.rollback()
+        if conn:
+            conn.rollback()
         return jsonify({'error': str(e)}), 500
     finally:
-        put_conn(conn)
+        if conn:
+            put_conn(conn)
 
 
 # GET /api/templates/media-url?name=<template_name>
@@ -324,13 +327,14 @@ def attach_media():
 # for this template, and if so, its public URL.
 @templates_bp.route('/media-url', methods=['GET'])
 def media_url():
-    user_id = session.get('user_id')
-    name = (request.args.get('name') or '').strip().lower()
-    if not user_id or not name:
-        return jsonify({'success': True, 'has_media': False})
-
-    conn = get_conn()
+    conn = None
     try:
+        user_id = session.get('user_id')
+        name = (request.args.get('name') or '').strip().lower()
+        if not user_id or not name:
+            return jsonify({'success': True, 'has_media': False})
+
+        conn = get_conn()
         cur = conn.cursor()
         cur.execute(
             'SELECT token, filename FROM template_media WHERE user_id = %s AND template_name = %s',
@@ -345,14 +349,16 @@ def media_url():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
-        put_conn(conn)
+        if conn:
+            put_conn(conn)
 
 
 # GET /api/templates/media/<token>  — public, no auth (Meta's servers fetch this directly)
 @templates_bp.route('/media/<token>', methods=['GET'])
 def media_file(token):
-    conn = get_conn()
+    conn = None
     try:
+        conn = get_conn()
         cur = conn.cursor()
         cur.execute('SELECT data, mime_type FROM template_media WHERE token = %s', (token,))
         row = cur.fetchone()
@@ -363,4 +369,5 @@ def media_file(token):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
-        put_conn(conn)
+        if conn:
+            put_conn(conn)
