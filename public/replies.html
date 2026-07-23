@@ -488,6 +488,10 @@
     try {
       const res    = await fetch(`${API}/cr-active?phone=${encodeURIComponent(phone)}`);
       const active = await res.json();
+      // Same staleness check as loadConversationMessages() — if the user
+      // has already switched to yet another contact by the time this
+      // resolves, these jobs belong to someone else now; don't attach them.
+      if (phone !== currentPhone) return;
       for (const job of (active.jobs || [])) {
         pendingReplies.push({ cr_id: job.cr_id, text: job.message_text, status: job.status });
         attachCRStream(job.cr_id);
@@ -582,6 +586,13 @@
     try {
       const res  = await fetch(`${API}/conversation/${encodeURIComponent(phone)}`);
       const data = await res.json();
+
+      // If the user has since switched to a different contact, this response
+      // is stale — rendering it now would overwrite the correct conversation
+      // with the wrong one (whichever fetch happens to resolve last used to
+      // win, regardless of which contact is actually open). Discard it.
+      if (phone !== currentPhone) return;
+
       const wrap = document.getElementById('thread-messages');
 
       let lastDateKey = null;
