@@ -49,7 +49,10 @@
       display: flex; align-items: center; justify-content: center;
     }
     .conv-info { flex: 1; min-width: 0; }
-    .conv-name { font-size: 14px; font-weight: 700; color: var(--text); }
+    .conv-name {
+      font-size: 14px; font-weight: 700; color: var(--text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
     .conv-preview {
       font-size: 12.5px; color: var(--text-2); margin-top: 2px;
       white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 210px;
@@ -425,7 +428,7 @@
       const badge = c.unread_count > 0 ? `<span class="conv-badge">${c.unread_count}</span>` : '';
       const active = c.phone === currentPhone ? 'active' : '';
       return `
-        <div class="conv-item ${active}" onclick="openConversation('${esc(c.phone)}', '${esc(name).replace(/'/g,"\\'")}')">
+        <div class="conv-item ${active}" data-phone="${esc(c.phone)}" data-name="${esc(name)}">
           <div class="conv-avatar">${esc(name).charAt(0).toUpperCase()}</div>
           <div class="conv-info">
             <div class="conv-name">${esc(name)}</div>
@@ -886,6 +889,17 @@
     playNotifySound();
     loadConversations();
     if (currentPhone) loadConversationMessages(currentPhone);
+  });
+
+  // One delegated listener instead of an inline onclick per row — a contact's
+  // display name comes straight from their WhatsApp profile with no character
+  // restrictions, so building a JS call as a text string and splicing that
+  // name into it (as the old inline onclick did) breaks unpredictably for
+  // unusual names. Reading it back out of a data-* attribute only ever needs
+  // the HTML-escaping esc() already does, sidestepping that whole class of bug.
+  document.getElementById('conv-list').addEventListener('click', (e) => {
+    const item = e.target.closest('.conv-item');
+    if (item) openConversation(item.dataset.phone, item.dataset.name);
   });
 
   setInterval(loadConversations, 20000);
