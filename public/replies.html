@@ -478,6 +478,15 @@
     document.getElementById('reply-textarea').value = '';
     document.getElementById('reply-send-btn').disabled = false;
 
+    // Clear the previous contact's messages immediately. The header above
+    // updates instantly, but without this the old contact's messages stay
+    // on screen — now under the new contact's name — until this contact's
+    // own conversation fetch resolves, which is exactly the "wrong chat
+    // shows for a second" symptom: the fetch guard in loadConversationMessages()
+    // only stops a late response from overwriting a newer one, it doesn't
+    // stop the *old* content from lingering during the gap before that.
+    document.getElementById('thread-messages').innerHTML = '';
+
     // Optimistically clear the unread badge — the server marks it read too.
     const conv = conversations.find(c => c.phone === phone);
     if (conv) conv.unread_count = 0;
