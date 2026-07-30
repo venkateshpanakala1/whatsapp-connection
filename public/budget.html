@@ -29,10 +29,11 @@
     .budget-chart-wrap { overflow-x: auto; padding-bottom: 4px; }
     .budget-chart {
       display: flex; align-items: flex-end; gap: 8px;
-      min-width: min-content; padding: 4px 4px 0;
+      min-width: min-content; padding: 20px 4px 0; /* top room for the peak-day label */
+      border-bottom: 1px solid var(--border); /* baseline the bars sit on */
     }
     .budget-col { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; }
-    .budget-bar-track { height: 160px; display: flex; align-items: flex-end; }
+    .budget-bar-track { height: 160px; display: flex; align-items: flex-end; position: relative; }
     .budget-bar {
       width: 20px; display: flex; flex-direction: column-reverse; gap: 2px;
       border-radius: 3px 3px 0 0; overflow: hidden; min-height: 2px;
@@ -40,12 +41,27 @@
     }
     .budget-seg { width: 100%; }
     .budget-seg-empty { background: rgba(255,255,255,0.1); }
+    /* Sits as a sibling of .budget-bar (not nested inside it) — .budget-bar
+       has overflow:hidden to clip its stacked segments to a rounded top
+       corner, which would also clip this label if it were a child instead. */
+    .budget-peak-label {
+      position: absolute; left: 50%; transform: translateX(-50%);
+      font-size: 10px; font-weight: 700; color: #6ee7b7; white-space: nowrap;
+    }
     .budget-col-label {
       font-size: 10px; color: var(--text-3); white-space: nowrap;
       writing-mode: vertical-rl; transform: rotate(180deg); height: 42px;
     }
 
     .budget-stat-note { font-size: 11px; color: var(--text-3); margin-top: -10px; margin-bottom: 18px; }
+
+    /* Dedicated stat-card accents for this page — the generic s-total/
+       s-sent/s-failed classes carry send-success/failure meaning that
+       doesn't fit here (an "Avg / Day" spend figure isn't a failure). */
+    .s-spend .stat-num { color: #6ee7b7; }
+    .s-msgs  .stat-num { color: #6da7ec; }
+    .s-avg   .stat-num { color: #eda100; }
+    .stat-sub { font-size: 10.5px; color: var(--text-3); margin-top: 4px; line-height: 1.4; }
   </style>
 </head>
 <body>
@@ -177,6 +193,7 @@
   function renderChart(days, currency) {
     const maxTotal = Math.max(1, ...days.map(d => d.total_cost));
     const MAX_BAR_HEIGHT = 160;
+    let peakLabeled = false; // only the first day hitting maxTotal gets the direct label, even if there's a tie
 
     const cols = days.map(d => {
       const barHeight = Math.max(2, Math.round((d.total_cost / maxTotal) * MAX_BAR_HEIGHT));
@@ -196,10 +213,21 @@
         segs = `<div class="budget-seg budget-seg-empty" style="flex:1"></div>`;
       }
 
+      // One direct label on the peak day only, for scale reference — not a
+      // number crammed onto every bar. Positioned relative to .budget-bar-
+      // track (not nested inside .budget-bar itself, which clips to a
+      // rounded top corner via overflow:hidden).
+      let peakLabel = '';
+      if (!peakLabeled && d.total_cost === maxTotal && d.total_cost > 0) {
+        peakLabeled = true;
+        peakLabel = `<div class="budget-peak-label" style="bottom:${barHeight + 6}px">${formatMoney(d.total_cost, currency)}</div>`;
+      }
+
       return `
         <div class="budget-col" title="${esc(title)}">
           <div class="budget-bar-track">
             <div class="budget-bar" style="height:${barHeight}px">${segs}</div>
+            ${peakLabel}
           </div>
           <div class="budget-col-label">${formatDateLabel(d.date)}</div>
         </div>`;
@@ -239,29 +267,33 @@
         const debugBlock = data._debug_raw_meta_response
           ? `<pre style="text-align:left;max-width:700px;margin:18px auto 0;padding:14px;background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:var(--r-sm);font-size:11px;white-space:pre-wrap;word-break:break-all;color:var(--text-2)">${esc(JSON.stringify(data._debug_raw_meta_response, null, 2))}</pre>`
           : '';
-        body.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No spend recorded in this range.</div><div class="empty-sub">Meta returned a response with no cost data for this WABA/range — likely no billing set up yet, or free-tier-only usage. Raw response below for debugging:</div>${debugBlock}</div>`;
+        body.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No spend recorded in this range.</div><div class="empty-sub">Meta returned no cost data for this WABA/range — could mean no billing set up yet, free-tier-only usage, or this account's pricing model needs a different analytics field than the ones this page currently requests. Raw response below for debugging:</div>${debugBlock}</div>`;
         return;
       }
 
       const categoriesPresent = CATEGORY_ORDER.filter(cat => data.days.some(d => d.by_category[cat]));
-      const avgPerDay = data.grand_total / data.days.length;
+      const activeDays = data.days.length;
+      const avgPerDay = data.grand_total / activeDays;
 
       body.innerHTML = `
         <div class="stat-grid" style="margin-bottom:6px">
-          <div class="stat-card s-total">
+          <div class="stat-card s-spend">
             <div class="stat-num">${formatMoney(data.grand_total, data.currency)}</div>
             <div class="stat-lbl">Total Spend</div>
+            <div class="stat-sub">Total Meta billed you in this range</div>
           </div>
-          <div class="stat-card s-sent">
-            <div class="stat-num">${data.grand_conversations}</div>
-            <div class="stat-lbl">Conversations</div>
+          <div class="stat-card s-msgs">
+            <div class="stat-num">${data.grand_conversations.toLocaleString()}</div>
+            <div class="stat-lbl">Messages Billed</div>
+            <div class="stat-sub">Billable messages Meta charged for</div>
           </div>
-          <div class="stat-card s-failed">
+          <div class="stat-card s-avg">
             <div class="stat-num">${formatMoney(avgPerDay, data.currency)}</div>
             <div class="stat-lbl">Avg / Day</div>
+            <div class="stat-sub">Averaged over the ${activeDays} day${activeDays !== 1 ? 's' : ''} with recorded activity</div>
           </div>
         </div>
-        <div class="budget-stat-note">Figures come directly from Meta's Conversation Analytics for this WhatsApp Business Account.</div>
+        <div class="budget-stat-note">Figures come directly from Meta's own billing analytics for this WhatsApp Business Account.</div>
         ${renderLegend(categoriesPresent)}
         ${renderChart(data.days, data.currency)}
         <div class="card-title" style="margin:22px 0 12px">Day-by-day breakdown</div>
