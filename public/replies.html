@@ -287,21 +287,31 @@
     }
 
     .conv-search-bar { margin: -10px 0 16px; }
-    .conv-search-bar input {
-      width: 100%; max-width: 340px; padding: 9px 16px;
+    .conv-search-wrap { position: relative; width: 100%; max-width: 340px; }
+    .conv-search-wrap input {
+      width: 100%; padding: 9px 34px 9px 16px;
       border: 1.5px solid rgba(255,255,255,0.18); border-radius: 20px;
       font-size: 13.5px; font-family: inherit; color: var(--text);
       background: rgba(255,255,255,0.06); outline: none;
       transition: all var(--t);
     }
-    .conv-search-bar input:focus {
+    .conv-search-wrap input:focus {
       border-color: var(--g-300);
       box-shadow: 0 0 0 3px rgba(37,211,102,0.18);
       background: rgba(255,255,255,0.1);
     }
-    .conv-search-bar input::placeholder { color: var(--text-3); }
+    .conv-search-wrap input::placeholder { color: var(--text-3); }
+    .conv-search-clear {
+      display: none; position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+      width: 22px; height: 22px; border-radius: 50%;
+      background: none; border: none; color: var(--text-3); cursor: pointer;
+      font-size: 14px; line-height: 1; align-items: center; justify-content: center;
+      transition: all var(--t);
+    }
+    .conv-search-clear.show { display: flex; }
+    .conv-search-clear:hover { color: var(--text); background: rgba(255,255,255,0.1); }
     @media (max-width: 768px) {
-      .conv-search-bar input { max-width: none; }
+      .conv-search-wrap { max-width: none; }
     }
   </style>
 </head>
@@ -357,7 +367,10 @@
   </div>
 
   <div class="conv-search-bar" id="conv-search-bar">
-    <input type="text" id="conv-search" placeholder="🔍 Search by name" oninput="renderConversationList()" />
+    <div class="conv-search-wrap">
+      <input type="text" id="conv-search" placeholder="🔍 Search by name" oninput="onConvSearchInput()" />
+      <button type="button" class="conv-search-clear" id="conv-search-clear" onclick="clearConvSearch()" title="Clear search">✕</button>
+    </div>
   </div>
 
   <div class="chat-layout" id="chat-layout">
@@ -441,6 +454,19 @@
           `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
       }
     }
+  }
+
+  function onConvSearchInput() {
+    document.getElementById('conv-search-clear').classList.toggle('show', !!document.getElementById('conv-search').value);
+    renderConversationList();
+  }
+
+  function clearConvSearch() {
+    const input = document.getElementById('conv-search');
+    input.value = '';
+    document.getElementById('conv-search-clear').classList.remove('show');
+    renderConversationList();
+    input.focus();
   }
 
   function renderConversationList() {

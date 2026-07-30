@@ -75,6 +75,7 @@ def spend():
             timeout=15
         )
         data = res.json()
+        print(f"[budget] Meta raw response for waba_id={creds['waba_id']}: {data}")
         if 'error' in data:
             return jsonify({'error': data['error'].get('message', 'Meta API error')}), 400
     except Exception as e:
@@ -117,11 +118,19 @@ def spend():
     grand_total         = round(sum(d['total_cost'] for d in days_list), 2)
     grand_conversations  = sum(d['total_conversations'] for d in days_list)
 
-    return jsonify({
+    response = {
         'success': True,
         'currency': data.get('currency') or 'USD',
         'days': days_list,
         'category_order': CATEGORY_ORDER,
         'grand_total': grand_total,
         'grand_conversations': grand_conversations,
-    })
+    }
+    # Temporary: while this endpoint is still unverified against a live
+    # account, surface Meta's exact raw response whenever we found nothing,
+    # so it's visible right on the page — no Railway log access needed to
+    # tell whether Meta returned truly empty analytics vs. something our
+    # parsing missed.
+    if not days_list:
+        response['_debug_raw_meta_response'] = data
+    return jsonify(response)
