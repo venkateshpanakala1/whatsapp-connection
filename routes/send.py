@@ -476,8 +476,10 @@ def job_status(job_id):
     return jsonify({'found': True, **job})
 
 
-# GET /api/send/history  — recent past bulk-send runs for this user, with
-# delivered/read/replied engagement counts alongside the raw sent/failed ones.
+# GET /api/send/history  — every past bulk-send run for this user, with
+# delivered/read/replied engagement counts alongside the raw sent/failed
+# ones. Not capped — the frontend paginates the full list itself (see
+# history.html), so this needs to return everything, not just a recent slice.
 @send_bp.route('/history', methods=['GET'])
 def send_history():
     user_id = session.get('user_id')
@@ -501,7 +503,7 @@ def send_history():
             LEFT JOIN send_logs sl ON sl.job_id = sj.id AND sl.status = 'sent'
             WHERE sj.user_id = %s
             GROUP BY sj.id
-            ORDER BY sj.created_at DESC LIMIT 20
+            ORDER BY sj.created_at DESC
         """, (user_id,))
         rows = cur.fetchall()
         cur.close()
