@@ -100,6 +100,7 @@
     <a href="/contacts"  class="nav-item"><span class="nav-icon">👥</span> Contacts</a>
     <a href="/send"      class="nav-item active"><span class="nav-icon">📤</span> Bulk Send</a>
     <a href="/history"   class="nav-item"><span class="nav-icon">📊</span> History</a>
+    <a href="/budget"    class="nav-item"><span class="nav-icon">💰</span> Budget</a>
     <a href="/replies"   class="nav-item"><span class="nav-icon">💬</span> Replies</a>
   </nav>
   <div class="sidebar-footer">
@@ -256,7 +257,6 @@
   const API = '/api/send';
   let filesData     = [];
   let templatesData = [];
-  let eventSource   = null;
   let activeJobId   = null;
 
   async function loadSidebarStatus() {
@@ -477,60 +477,34 @@
     } catch (e) { showError('Server error: ' + e.message); resetBtn(); }
   }
 
-  let sseRetryCount = 0;
-  let lastMsgAt     = 0;
-  let watchdogTimer = null;
+  let progressPollTimer = null;
 
+  // Polls the job's status on an interval instead of holding an SSE
+  // connection open for the job's whole duration — a bulk send to hundreds
+  // of contacts at several seconds' delay each can run for a long time, and
+  // that held a gunicorn thread hostage the entire time. A few of these (plus
+  // any in-flight reply statuses) open at once could exhaust the site's whole
+  // thread pool, stalling unrelated page loads for everyone. Polling also
+  // sidesteps the old SSE dropped-connection/reconnect problem entirely —
+  // there's no persistent connection to go stale, so every tick is a fresh,
+  // independent, self-contained request.
   function connectSSE(jobId) {
-    if (eventSource) eventSource.close();
-    eventSource = new EventSource(`${API}/progress/${jobId}`);
-    lastMsgAt = Date.now();
-    eventSource.onmessage = e => {
-      sseRetryCount = 0; // any successful message means the connection is healthy again
-      lastMsgAt = Date.now();
-      const d = JSON.parse(e.data);
-      updateProgress(d);
-      if (d.status === 'done' || d.status === 'cancelled') { eventSource.close(); onDone(d); }
-    };
-    // A dropped connection (network blip, proxy idle-timeout, etc.) does NOT
-    // mean the job stopped — the backend keeps running regardless. Without
-    // reconnecting here, the UI just freezes at its last-seen count forever,
-    // even though sends keep happening — only a manual refresh would ever
-    // catch it back up. Retry with a short delay instead, capped so a truly
-    // dead/finished job doesn't retry forever.
-    eventSource.onerror = () => {
-      eventSource.close();
-      if (!activeJobId) return; // job already finished/cancelled, nothing to reconnect to
-      sseRetryCount++;
-      if (sseRetryCount > 20) return;
-      setTimeout(() => { if (activeJobId) connectSSE(jobId); }, 2000);
-    };
-    startWatchdog();
-  }
-
-  // Some stalls never fire onerror at all — the stream just goes silent
-  // (a proxy drops it without a clean close, or a backgrounded mobile tab
-  // throttles timers/EventSource). The backend job doesn't care and keeps
-  // running, but the UI would sit frozen forever with no signal to recover
-  // from. This checks for staleness independently of onerror/onmessage and
-  // self-heals by polling the job's real status and forcing a fresh
-  // connection — no manual refresh required.
-  function startWatchdog() {
-    if (watchdogTimer) return;
-    watchdogTimer = setInterval(async () => {
-      if (!activeJobId) { clearInterval(watchdogTimer); watchdogTimer = null; return; }
-      if (Date.now() - lastMsgAt < 8000) return;
+    if (progressPollTimer) clearInterval(progressPollTimer);
+    const poll = async () => {
       try {
-        const res  = await fetch(`${API}/status/${activeJobId}`);
+        const res  = await fetch(`${API}/status/${jobId}`);
         const data = await res.json();
-        if (data.found) {
-          updateProgress(data);
-          if (data.status === 'done' || data.status === 'cancelled') { onDone(data); return; }
+        if (!data.found) return;
+        updateProgress(data);
+        if (data.status === 'done' || data.status === 'cancelled') {
+          clearInterval(progressPollTimer);
+          progressPollTimer = null;
+          onDone(data);
         }
       } catch (e) {}
-      lastMsgAt = Date.now(); // avoid re-firing every tick while the reconnect itself settles
-      connectSSE(activeJobId);
-    }, 4000);
+    };
+    poll(); // read immediately instead of waiting a full interval
+    progressPollTimer = setInterval(poll, 1500);
   }
 
   function updateProgress(d) {
@@ -569,7 +543,6 @@
     }
     localStorage.removeItem('wa_job_id');
     activeJobId = null;
-    if (watchdogTimer) { clearInterval(watchdogTimer); watchdogTimer = null; }
     resetBtn();
   }
 

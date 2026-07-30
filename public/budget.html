@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Budget</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#075e54">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" href="/favicon-64.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <script src="/pwa.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    /* ── Stacked bar chart (date-wise spend by conversation category) ──
+       Categorical colors are the validated dark-mode categorical slots
+       (blue/orange/aqua/yellow, in fixed order — see the dataviz skill's
+       palette.md), assigned to MARKETING/UTILITY/AUTHENTICATION/SERVICE and
+       never reassigned by rank, so a category always reads as the same
+       color everywhere on this page. */
+    .budget-legend { display: flex; gap: 18px; flex-wrap: wrap; margin: 4px 0 18px; }
+    .budget-legend-item { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: var(--text-2); }
+    .budget-legend-swatch { width: 11px; height: 11px; border-radius: 3px; flex-shrink: 0; }
+
+    .budget-chart-wrap { overflow-x: auto; padding-bottom: 4px; }
+    .budget-chart {
+      display: flex; align-items: flex-end; gap: 8px;
+      min-width: min-content; padding: 4px 4px 0;
+    }
+    .budget-col { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; }
+    .budget-bar-track { height: 160px; display: flex; align-items: flex-end; }
+    .budget-bar {
+      width: 20px; display: flex; flex-direction: column-reverse; gap: 2px;
+      border-radius: 3px 3px 0 0; overflow: hidden; min-height: 2px;
+      transition: height 0.3s ease;
+    }
+    .budget-seg { width: 100%; }
+    .budget-seg-empty { background: rgba(255,255,255,0.1); }
+    .budget-col-label {
+      font-size: 10px; color: var(--text-3); white-space: nowrap;
+      writing-mode: vertical-rl; transform: rotate(180deg); height: 42px;
+    }
+
+    .budget-stat-note { font-size: 11px; color: var(--text-3); margin-top: -10px; margin-bottom: 18px; }
+  </style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-icon"><img src="/icon-192.png" alt="V7 logo"></div>
+    <div class="brand-text">
+      <div class="app-name">V7</div>
+      <div class="app-sub">Stress2Solutions</div>
+    </div>
+  </div>
+  <nav class="sidebar-nav">
+    <div class="nav-label">Setup</div>
+    <a href="/"          class="nav-item"><span class="nav-icon">⚡</span> WhatsApp Connect</a>
+    <div class="nav-label">Messaging</div>
+    <a href="/templates" class="nav-item"><span class="nav-icon">📋</span> Templates</a>
+    <a href="/contacts"  class="nav-item"><span class="nav-icon">👥</span> Contacts</a>
+    <a href="/send"      class="nav-item"><span class="nav-icon">📤</span> Bulk Send</a>
+    <a href="/history"   class="nav-item"><span class="nav-icon">📊</span> History</a>
+    <a href="/budget"    class="nav-item active"><span class="nav-icon">💰</span> Budget</a>
+    <a href="/replies"   class="nav-item"><span class="nav-icon">💬</span> Replies</a>
+  </nav>
+  <div class="sidebar-footer">
+    <div class="conn-status">
+      <span class="conn-dot" id="sidebar-dot"></span>
+      <span id="sidebar-status-text">Checking...</span>
+    </div>
+    <div id="sidebar-user" style="margin-top:10px;display:none">
+      <div style="font-size:11px;color:rgba(255,255,255,0.45);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="sidebar-email"></div>
+      <button onclick="doLogout()" style="width:100%;padding:7px;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);color:rgba(255,255,255,0.7);border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;transition:all 0.2s" onmouseover="this.style.background='rgba(255,255,255,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">
+        🚪 Sign Out
+      </button>
+    </div>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="page-hdr">
+    <div>
+      <div class="ph-title">Budget</div>
+      <div class="ph-sub">Real WhatsApp spend, pulled directly from Meta</div>
+    </div>
+    <div class="ph-user">
+      <div class="ph-email-chip">
+        <span class="ph-avatar" id="hdr-avatar">?</span>
+        <span class="ph-email" id="hdr-email"></span>
+      </div>
+      <button class="btn-logout" onclick="doLogout()">Sign Out</button>
+    </div>
+  </div>
+
+  <div class="card card-wide" id="budget-section">
+    <div class="card-hdr">
+      <div class="card-title">Spend Overview</div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <select id="range-select" onchange="loadBudget()" style="width:auto;padding:8px 32px 8px 12px">
+          <option value="7">Last 7 days</option>
+          <option value="14">Last 14 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="loadBudget()">↻ Refresh</button>
+      </div>
+    </div>
+
+    <div id="budget-body">
+      <div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API = '/api/budget';
+  let budgetData = null;
+
+  // Fixed categorical color assignment — never reassigned by rank, so a
+  // category always reads as the same color regardless of which categories
+  // actually appear in a given range. Validated dark-mode categorical slots
+  // (blue/orange/aqua/yellow) per the dataviz skill's palette.md.
+  const CATEGORY_META = {
+    MARKETING:      { label: 'Marketing',      color: '#3987e5' },
+    UTILITY:        { label: 'Utility',        color: '#d95926' },
+    AUTHENTICATION: { label: 'Authentication', color: '#199e70' },
+    SERVICE:        { label: 'Service',        color: '#c98500' },
+    OTHER:          { label: 'Other',          color: '#9085e9' },
+  };
+  const CATEGORY_ORDER = ['MARKETING', 'UTILITY', 'AUTHENTICATION', 'SERVICE', 'OTHER'];
+
+  async function loadSidebarStatus() {
+    try {
+      const res  = await fetch('/api/whatsapp/status');
+      const data = await res.json();
+      const dot  = document.getElementById('sidebar-dot');
+      const txt  = document.getElementById('sidebar-status-text');
+      if (data.connected && data.data?.status === 'active') {
+        dot.classList.add('on'); txt.textContent = 'Connected';
+      } else {
+        dot.classList.remove('on'); txt.textContent = 'Not connected';
+      }
+    } catch (e) {}
+  }
+
+  function esc(str) {
+    return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function formatMoney(value, currency) {
+    try {
+      return new Intl.NumberFormat(undefined, { style: 'currency', currency: currency || 'USD' }).format(value);
+    } catch (e) {
+      return `$${Number(value).toFixed(2)}`;
+    }
+  }
+
+  function formatDateLabel(dateStr) {
+    const d = new Date(dateStr + 'T00:00:00Z');
+    return d.toLocaleDateString([], { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  }
+
+  function renderLegend(categoriesPresent) {
+    return `<div class="budget-legend">${categoriesPresent.map(cat => `
+      <div class="budget-legend-item">
+        <span class="budget-legend-swatch" style="background:${CATEGORY_META[cat]?.color || '#888'}"></span>
+        ${esc(CATEGORY_META[cat]?.label || cat)}
+      </div>`).join('')}</div>`;
+  }
+
+  function renderChart(days, currency) {
+    const maxTotal = Math.max(1, ...days.map(d => d.total_cost));
+    const MAX_BAR_HEIGHT = 160;
+
+    const cols = days.map(d => {
+      const barHeight = Math.max(2, Math.round((d.total_cost / maxTotal) * MAX_BAR_HEIGHT));
+      const catBreakdown = CATEGORY_ORDER
+        .filter(cat => d.by_category[cat])
+        .map(cat => `${CATEGORY_META[cat]?.label || cat} ${formatMoney(d.by_category[cat], currency)}`)
+        .join(', ');
+      const title = `${formatDateLabel(d.date)} — ${formatMoney(d.total_cost, currency)}${catBreakdown ? ' (' + catBreakdown + ')' : ''}`;
+
+      let segs;
+      if (d.total_cost > 0) {
+        segs = CATEGORY_ORDER
+          .filter(cat => d.by_category[cat])
+          .map(cat => `<div class="budget-seg" style="flex:${d.by_category[cat]};background:${CATEGORY_META[cat]?.color || '#888'}"></div>`)
+          .join('');
+      } else {
+        segs = `<div class="budget-seg budget-seg-empty" style="flex:1"></div>`;
+      }
+
+      return `
+        <div class="budget-col" title="${esc(title)}">
+          <div class="budget-bar-track">
+            <div class="budget-bar" style="height:${barHeight}px">${segs}</div>
+          </div>
+          <div class="budget-col-label">${formatDateLabel(d.date)}</div>
+        </div>`;
+    }).join('');
+
+    return `<div class="budget-chart-wrap"><div class="budget-chart">${cols}</div></div>`;
+  }
+
+  function renderTable(days, currency) {
+    const categoriesPresent = CATEGORY_ORDER.filter(cat => days.some(d => d.by_category[cat]));
+    const header = `<th>Date</th>${categoriesPresent.map(cat => `<th>${esc(CATEGORY_META[cat]?.label || cat)}</th>`).join('')}<th>Total</th>`;
+    const rows = days.slice().reverse().map(d => `
+      <tr>
+        <td>${formatDateLabel(d.date)}</td>
+        ${categoriesPresent.map(cat => `<td>${d.by_category[cat] ? formatMoney(d.by_category[cat], currency) : '—'}</td>`).join('')}
+        <td style="font-weight:700">${formatMoney(d.total_cost, currency)}</td>
+      </tr>`).join('');
+    return `<div class="table-wrap"><table><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  async function loadBudget() {
+    const body = document.getElementById('budget-body');
+    body.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>';
+    const days = document.getElementById('range-select').value;
+    try {
+      const res  = await fetch(`${API}/spend?days=${days}`);
+      const data = await res.json();
+      if (!data.success) {
+        body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">${esc(data.error || 'Could not load spend data')}</div><div class="empty-sub">This needs a payment method attached to your WhatsApp Business Account in Meta Business Manager.</div></div>`;
+        return;
+      }
+      budgetData = data;
+      if (!data.days.length) {
+        body.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No spend recorded in this range.</div></div>';
+        return;
+      }
+
+      const categoriesPresent = CATEGORY_ORDER.filter(cat => data.days.some(d => d.by_category[cat]));
+      const avgPerDay = data.grand_total / data.days.length;
+
+      body.innerHTML = `
+        <div class="stat-grid" style="margin-bottom:6px">
+          <div class="stat-card s-total">
+            <div class="stat-num">${formatMoney(data.grand_total, data.currency)}</div>
+            <div class="stat-lbl">Total Spend</div>
+          </div>
+          <div class="stat-card s-sent">
+            <div class="stat-num">${data.grand_conversations}</div>
+            <div class="stat-lbl">Conversations</div>
+          </div>
+          <div class="stat-card s-failed">
+            <div class="stat-num">${formatMoney(avgPerDay, data.currency)}</div>
+            <div class="stat-lbl">Avg / Day</div>
+          </div>
+        </div>
+        <div class="budget-stat-note">Figures come directly from Meta's Conversation Analytics for this WhatsApp Business Account.</div>
+        ${renderLegend(categoriesPresent)}
+        ${renderChart(data.days, data.currency)}
+        <div class="card-title" style="margin:22px 0 12px">Day-by-day breakdown</div>
+        ${renderTable(data.days, data.currency)}
+      `;
+    } catch (e) {
+      body.innerHTML = `<div class="empty-state"><div class="empty-text">Error: ${esc(e.message)}</div></div>`;
+    }
+  }
+
+  loadSidebarStatus();
+  loadBudget();
+
+  async function loadSidebarUser() {
+    try {
+      const res  = await fetch('/api/auth/me', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.logged_in) {
+        const displayName = data.name || data.email;
+        document.getElementById('sidebar-email').textContent = displayName;
+        document.getElementById('sidebar-user').style.display = 'block';
+        document.getElementById('hdr-email').textContent = displayName;
+        document.getElementById('hdr-avatar').textContent = displayName.charAt(0).toUpperCase();
+      }
+    } catch (e) {}
+  }
+  async function doLogout() {
+    try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' }); } catch (e) {}
+    try { localStorage.clear(); } catch (e) {}
+    try { sessionStorage.clear(); } catch (e) {}
+    try {
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+    } catch (e) {}
+    // Best-effort: the session cookie itself is HttpOnly and already cleared
+    // by the backend logout call above — this just sweeps any other cookies.
+    try {
+      document.cookie.split(';').forEach((c) => {
+        const name = c.split('=')[0].trim();
+        if (name) document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+      });
+    } catch (e) {}
+    window.location.href = '/login';
+  }
+  loadSidebarUser();
+</script>
+</body>
+</html>

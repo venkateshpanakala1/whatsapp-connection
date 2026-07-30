@@ -13,6 +13,7 @@ from routes.webhook import webhook_bp
 from routes.replies import replies_bp, resume_pending_counter_replies, backfill_reply_contact_names
 from routes.auth import auth_bp
 from routes.push import push_bp
+from routes.budget import budget_bp
 
 load_dotenv()
 
@@ -29,6 +30,7 @@ app.register_blueprint(webhook_bp)
 app.register_blueprint(replies_bp,   url_prefix='/api/replies')
 app.register_blueprint(auth_bp,      url_prefix='/api/auth')
 app.register_blueprint(push_bp,      url_prefix='/api/push')
+app.register_blueprint(budget_bp,    url_prefix='/api/budget')
 
 init_db()
 backfill_reply_contact_names()
@@ -96,6 +98,11 @@ def send_page():
 def history_page():
     return send_from_directory('public', 'history.html')
 
+@app.route('/budget')
+@login_required
+def budget_page():
+    return send_from_directory('public', 'budget.html')
+
 @app.route('/replies')
 @login_required
 def replies_page():
@@ -136,4 +143,9 @@ def data_deletion():
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 3000))
     print(f'Server running at http://localhost:{port}')
-    app.run(host='0.0.0.0', port=port, debug=True)
+    # threaded=True matters here, not just for speed: /api/send/progress and
+    # /api/replies/cr-status are long-lived SSE streams that block for the
+    # entire job/reply duration. Without threading, Werkzeug's dev server
+    # handles one request at a time — an open SSE stream would freeze every
+    # other request (page loads, other tabs) until that message finished.
+    app.run(host='0.0.0.0', port=port, debug=True, threaded=True)
