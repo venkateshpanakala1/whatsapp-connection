@@ -283,9 +283,9 @@
             <div class="stat-sub">Total Meta billed you in this range</div>
           </div>
           <div class="stat-card s-msgs">
-            <div class="stat-num">${data.grand_conversations.toLocaleString()}</div>
-            <div class="stat-lbl">Messages Billed</div>
-            <div class="stat-sub">Billable messages Meta charged for</div>
+            <div class="stat-num">${(data.bulk_sent_count || 0).toLocaleString()}</div>
+            <div class="stat-lbl">Bulk Send Messages</div>
+            <div class="stat-sub">Messages sent via your Bulk Send runs in this range</div>
           </div>
           <div class="stat-card s-avg">
             <div class="stat-num">${formatMoney(avgPerDay, data.currency)}</div>
@@ -293,7 +293,7 @@
             <div class="stat-sub">Averaged over the ${activeDays} day${activeDays !== 1 ? 's' : ''} with recorded activity</div>
           </div>
         </div>
-        <div class="budget-stat-note">Figures come directly from Meta's own billing analytics for this WhatsApp Business Account.</div>
+        <div class="budget-stat-note" style="margin-top:20px">Total Spend and Avg / Day come directly from Meta's own billing analytics; Bulk Send Messages comes from your own send history.</div>
         ${renderLegend(categoriesPresent)}
         ${renderChart(data.days, data.currency)}
         <div class="card-title" style="margin:22px 0 12px">Day-by-day breakdown</div>

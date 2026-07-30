@@ -30,6 +30,27 @@ def get_wa_credentials(user_id):
         put_conn(conn)
 
 
+def get_bulk_sent_count(user_id, start_dt, end_dt):
+    """Actual messages sent via Bulk Send in this range — separate from
+    Meta's own billed-message count above, which also includes counter-
+    replies and other conversation types. send_logs.sent_at is a naive
+    UTC TIMESTAMP (Postgres's NOW()), so the tz-aware start/end passed in
+    have their tzinfo stripped to compare correctly against it."""
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT COUNT(*) FROM send_logs
+            WHERE user_id = %s AND status = 'sent'
+              AND sent_at >= %s AND sent_at < %s
+        """, (user_id, start_dt.replace(tzinfo=None), end_dt.replace(tzinfo=None)))
+        row = cur.fetchone()
+        cur.close()
+        return row[0] if row else 0
+    finally:
+        put_conn(conn)
+
+
 # GET /api/budget/spend?days=30
 #
 # Pulls real per-day WhatsApp spend directly from Meta for this WABA,
@@ -140,6 +161,7 @@ def spend():
 
     grand_total         = round(sum(d['total_cost'] for d in days_list), 2)
     grand_conversations  = sum(d['total_conversations'] for d in days_list)
+    bulk_sent_count      = get_bulk_sent_count(user_id, start_dt, end_dt)
 
     response = {
         'success': True,
@@ -148,6 +170,7 @@ def spend():
         'category_order': CATEGORY_ORDER,
         'grand_total': grand_total,
         'grand_conversations': grand_conversations,
+        'bulk_sent_count': bulk_sent_count,
     }
     # Temporary: while this endpoint is still unverified against a live
     # account, surface Meta's exact raw response whenever we found nothing,
