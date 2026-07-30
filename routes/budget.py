@@ -32,17 +32,22 @@ def get_wa_credentials(user_id):
 
 # GET /api/budget/spend?days=30
 #
-# Pulls real per-day WhatsApp spend from Meta's Conversation Analytics for
-# this WABA, deliberately NOT computed from our own send_logs — Meta's
-# per-category/per-country pricing changes and varies, and a locally-guessed
-# number would drift from the tenant's actual bill. This is only as accurate
-# as what Meta's Graph API returns for this specific WABA/token: it requires
-# a payment method already attached to the WABA in Business Manager, and the
-# exact response shape below is based on Meta's documented Conversation
-# Analytics API but has not been verified against a live account. If Meta's
-# error message here doesn't make sense, or the numbers look wrong, the
-# `dimensions`/field names below are the first thing to check against
-# current Meta docs.
+# Pulls real per-day WhatsApp spend directly from Meta for this WABA,
+# deliberately NOT computed from our own send_logs — Meta's per-category/
+# per-country pricing changes and varies, and a locally-guessed number would
+# drift from the tenant's actual bill.
+#
+# A live test on this account confirmed Meta's own WhatsApp Manager billing
+# page shows real spend, but the older `conversation_analytics` field came
+# back completely absent (not just empty) from the Graph API response —
+# that's what Meta does for a field that no longer applies to an account,
+# not one that's genuinely empty. Since Meta migrated accounts to
+# per-message pricing through 2025, this now also requests the newer
+# `pricing_analytics` field alongside it and uses whichever one actually
+# comes back populated. If numbers still look wrong or missing, check the
+# raw response this endpoint logs (and returns inline as `_debug_raw_meta_
+# response` when nothing was found) against Meta's current docs for the
+# exact per-message pricing analytics field/dimension names.
 @budget_bp.route('/spend', methods=['GET'])
 def spend():
     user_id = session.get('user_id')
@@ -59,16 +64,31 @@ def spend():
     end_dt   = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
     start_dt = end_dt - timedelta(days=days)
 
+    start_ts, end_ts = int(start_dt.timestamp()), int(end_dt.timestamp())
+
     try:
         res = http.get(
             f"{META_API}/{creds['waba_id']}",
             params={
+                # Requesting both the older conversation-based field and the
+                # newer per-message-pricing field in one call — a live test
+                # confirmed Meta returns real spend data on its own WhatsApp
+                # Manager billing page for this account, but our first
+                # attempt (conversation_analytics) came back completely
+                # absent from the response with no error at all, which is
+                # what Meta does for a field that doesn't apply to this
+                # account rather than one that's just empty. Since Meta
+                # migrated accounts to per-message pricing through 2025,
+                # `pricing_analytics` is the likely correct field now —
+                # asking for both means whichever one Meta actually
+                # recognizes shows up, without another guess-and-redeploy
+                # round trip.
                 'fields': (
                     'currency,'
-                    f"conversation_analytics.start({int(start_dt.timestamp())})"
-                    f".end({int(end_dt.timestamp())})"
-                    '.granularity(DAILY)'
-                    '.dimensions(["conversation_category"])'
+                    f"conversation_analytics.start({start_ts}).end({end_ts})"
+                    '.granularity(DAILY).dimensions(["conversation_category"]),'
+                    f"pricing_analytics.start({start_ts}).end({end_ts})"
+                    '.granularity(DAILY).dimensions(["pricing_category","pricing_type"])'
                 ),
             },
             headers={'Authorization': f"Bearer {creds['access_token']}"},
@@ -81,16 +101,15 @@ def spend():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-    # Response shape per Meta's docs: conversation_analytics.data[0].data_points[],
-    # each point like {start, end, conversation, cost, conversation_category, ...}.
-    # Fail loudly (not silently show "$0 spent") if that shape doesn't match —
-    # a budget page silently showing zero when the real answer is unknown is
-    # worse than surfacing an explicit error.
+    # Whichever of the two fields Meta actually recognized for this account
+    # is the one with real data in it — the other comes back absent, same as
+    # conversation_analytics did on its own above. Read both, use whichever
+    # has data_points.
     try:
-        blocks = data.get('conversation_analytics', {}).get('data', [])
         points = []
-        for block in blocks:
-            points.extend(block.get('data_points', []))
+        for field_name in ('conversation_analytics', 'pricing_analytics'):
+            for block in data.get(field_name, {}).get('data', []):
+                points.extend(block.get('data_points', []))
     except Exception as e:
         return jsonify({'error': f"Unexpected response shape from Meta: {e}"}), 502
 
@@ -103,9 +122,13 @@ def spend():
         entry = by_date.setdefault(date_key, {
             'date': date_key, 'total_cost': 0.0, 'total_conversations': 0, 'by_category': {}
         })
-        cat   = (p.get('conversation_category') or 'OTHER').upper()
+        # Field names differ between the two possible sources above
+        # (conversation_category/conversation vs pricing_category/volume) —
+        # the exact per-message-pricing shape isn't confirmed yet, so read
+        # whichever key is actually present rather than assuming one.
+        cat = (p.get('conversation_category') or p.get('pricing_category') or 'OTHER').upper()
         cost  = float(p.get('cost') or 0)
-        convs = int(p.get('conversation') or 0)
+        convs = int(p.get('conversation') or p.get('volume') or 0)
         entry['total_cost'] += cost
         entry['total_conversations'] += convs
         entry['by_category'][cat] = entry['by_category'].get(cat, 0) + cost
