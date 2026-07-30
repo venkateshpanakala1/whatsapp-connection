@@ -233,7 +233,13 @@
       }
       budgetData = data;
       if (!data.days.length) {
-        body.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No spend recorded in this range.</div></div>';
+        // While this endpoint is still unverified against a live account,
+        // show Meta's exact raw response inline so it can be copy-pasted
+        // straight from this page for debugging — no log access needed.
+        const debugBlock = data._debug_raw_meta_response
+          ? `<pre style="text-align:left;max-width:700px;margin:18px auto 0;padding:14px;background:rgba(0,0,0,0.3);border:1px solid var(--border);border-radius:var(--r-sm);font-size:11px;white-space:pre-wrap;word-break:break-all;color:var(--text-2)">${esc(JSON.stringify(data._debug_raw_meta_response, null, 2))}</pre>`
+          : '';
+        body.innerHTML = `<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No spend recorded in this range.</div><div class="empty-sub">Meta returned a response with no cost data for this WABA/range — likely no billing set up yet, or free-tier-only usage. Raw response below for debugging:</div>${debugBlock}</div>`;
         return;
       }
 
