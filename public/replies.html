@@ -90,6 +90,39 @@
     .thread-name { font-size: 14.5px; font-weight: 700; color: var(--text); }
     .thread-phone { font-size: 12px; color: var(--text-3); margin-top: 1px; }
 
+    /* ── WhatsApp-style message multi-select (long-press a bubble → select
+       whole message, tap others to add, Copy copies all as text) ── */
+    .selection-toolbar {
+      display: none; align-items: center; gap: 14px; padding: 12px 18px;
+      border-bottom: 1px solid var(--border); background: #101c38;
+      position: sticky; top: 0; z-index: 3; flex-shrink: 0;
+    }
+    .thread-active.selecting .thread-header    { display: none; }
+    .thread-active.selecting .selection-toolbar { display: flex; }
+    .sel-close {
+      background: none; border: none; color: var(--text-2); cursor: pointer;
+      font-size: 20px; padding: 4px; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .sel-close:hover { color: var(--text); }
+    .sel-count { flex: 1; font-size: 14.5px; font-weight: 700; color: var(--text); }
+    .sel-copy-btn {
+      background: none; border: none; color: var(--g-500); cursor: pointer;
+      padding: 6px; display: flex; align-items: center; justify-content: center;
+    }
+    .sel-copy-btn:hover { color: #6ee7b7; }
+
+    /* Whole-message selection only (no partial-text drag), matching
+       WhatsApp — long-press is the only way in, so the browser's own
+       drag-to-select-text/context-menu would otherwise fight with it. */
+    .bubble-recv, .bubble-sent {
+      -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+    }
+    .bubble-recv.selected, .bubble-sent.selected {
+      outline: 2px solid var(--g-300); outline-offset: 2px;
+      filter: brightness(0.92);
+    }
+
     .thread-messages {
       flex: 1; overflow-y: auto; padding: 18px 22px;
       display: flex; flex-direction: column; gap: 8px;
@@ -290,6 +323,7 @@
     <a href="/contacts"  class="nav-item"><span class="nav-icon">👥</span> Contacts</a>
     <a href="/send"      class="nav-item"><span class="nav-icon">📤</span> Bulk Send</a>
     <a href="/history"   class="nav-item"><span class="nav-icon">📊</span> History</a>
+    <a href="/budget"    class="nav-item"><span class="nav-icon">💰</span> Budget</a>
     <a href="/replies"   class="nav-item active"><span class="nav-icon">💬</span> Replies</a>
   </nav>
   <div class="sidebar-footer">
@@ -333,6 +367,13 @@
     <div class="conv-thread" id="conv-thread">
       <div class="thread-empty" id="thread-empty">Select a conversation to view messages</div>
       <div class="thread-active" id="thread-active" style="display:none">
+        <div class="selection-toolbar" id="selection-toolbar">
+          <button class="sel-close" onclick="exitSelectionMode()" title="Cancel">✕</button>
+          <span class="sel-count" id="sel-count">0 selected</span>
+          <button class="sel-copy-btn" onclick="copySelectedMessages()" title="Copy">
+            <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          </button>
+        </div>
         <div class="thread-header">
           <button class="btn-back" onclick="closeThread()">
             <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
@@ -363,7 +404,7 @@
   // its own bubble with its own status, tracked independently so multiple
   // can be sent back-to-back without one affecting another.
   let pendingReplies = [];        // [{ cr_id, text, status }]
-  let crStreams      = new Map(); // cr_id -> EventSource
+  let crStreams      = new Map(); // cr_id -> setInterval timer id
 
   async function loadSidebarStatus() {
     try {
@@ -445,13 +486,14 @@
   async function openConversation(phone, name) {
     currentPhone = phone;
     currentName  = name;
+    exitSelectionMode(); // stale from whatever contact was open before
 
     // Every counter-reply stream belongs to whichever contact was open
     // before — none of them are relevant to this contact's screen, so stop
     // listening to all of them now. Each one keeps running server-side
     // regardless; the cr-active check below reconnects to whichever ones
     // belong to *this* contact and rebuilds their bubbles.
-    crStreams.forEach(es => es.close());
+    crStreams.forEach(timer => clearInterval(timer));
     crStreams.clear();
     pendingReplies = [];
 
@@ -552,6 +594,116 @@
 
   function downloadBtn(mediaUrl, filename, label, extraClass) {
     return `<a class="msg-dl-btn${extraClass ? ' ' + extraClass : ''}" href="javascript:void(0)" title="Download" onclick="event.stopPropagation(); downloadMedia('${mediaUrl}', '${filename}', '${label}')">${DL_ICON}</a>`;
+  }
+
+  // ── WhatsApp-style message multi-select ─────────────────────────────
+  // Long-press any bubble to select just that message (not a text-drag
+  // selection); while selecting, a plain tap on any other bubble adds/
+  // removes it from the set; Copy copies every selected message's text.
+  let selectionMode    = false;
+  let selectedBubbles  = new Set(); // bubble DOM elements
+
+  const LONG_PRESS_MS   = 450;
+  const MOVE_CANCEL_PX  = 10;
+  let pressTimer     = null;
+  let pressStartXY   = null;
+
+  function bubbleFromEvent(e) {
+    return e.target.closest('.bubble-recv, .bubble-sent');
+  }
+
+  function onBubblePressStart(e) {
+    if (e.button !== undefined && e.button !== 0) return; // ignore right/middle click
+    const bubble = bubbleFromEvent(e);
+    if (!bubble) return;
+    const point = e.touches ? e.touches[0] : e;
+    pressStartXY = { x: point.clientX, y: point.clientY };
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      pressTimer = null;
+      enterSelectionMode(bubble);
+    }, LONG_PRESS_MS);
+  }
+
+  function onBubblePressMove(e) {
+    if (!pressTimer || !pressStartXY) return;
+    const point = e.touches ? e.touches[0] : e;
+    if (Math.abs(point.clientX - pressStartXY.x) > MOVE_CANCEL_PX ||
+        Math.abs(point.clientY - pressStartXY.y) > MOVE_CANCEL_PX) {
+      clearTimeout(pressTimer); pressTimer = null;
+    }
+  }
+
+  function onBubblePressEnd() {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  }
+
+  // Capturing listener runs before any inline onclick on the bubble's own
+  // content (image open, download button, doc link) — while selecting,
+  // this intercepts the tap so it toggles selection instead of triggering
+  // that bubble's normal action.
+  function onBubbleClickCapture(e) {
+    if (!selectionMode) return;
+    const bubble = bubbleFromEvent(e);
+    if (!bubble) return;
+    e.preventDefault();
+    e.stopPropagation();
+    toggleBubbleSelection(bubble);
+  }
+
+  function enterSelectionMode(firstBubble) {
+    selectionMode = true;
+    document.getElementById('thread-active').classList.add('selecting');
+    toggleBubbleSelection(firstBubble);
+  }
+
+  function exitSelectionMode() {
+    selectionMode = false;
+    selectedBubbles.forEach(b => b.classList.remove('selected'));
+    selectedBubbles.clear();
+    document.getElementById('thread-active')?.classList.remove('selecting');
+    updateSelectionCount();
+  }
+
+  function toggleBubbleSelection(bubble) {
+    if (selectedBubbles.has(bubble)) {
+      selectedBubbles.delete(bubble);
+      bubble.classList.remove('selected');
+    } else {
+      selectedBubbles.add(bubble);
+      bubble.classList.add('selected');
+    }
+    updateSelectionCount();
+    if (selectedBubbles.size === 0) exitSelectionMode();
+  }
+
+  function updateSelectionCount() {
+    const el = document.getElementById('sel-count');
+    if (el) el.textContent = `${selectedBubbles.size} selected`;
+  }
+
+  function getBubbleText(bubble) {
+    // Strip the timestamp/reaction/download-icon decoration so a copied
+    // message is just its own text, not "10:51" or a reaction emoji glued on.
+    const clone = bubble.cloneNode(true);
+    clone.querySelectorAll('.bubble-time, .msg-reaction, .msg-dl-btn').forEach(n => n.remove());
+    return clone.textContent.trim().replace(/\s+/g, ' ');
+  }
+
+  async function copySelectedMessages() {
+    // Copy in on-screen (chronological) order, not selection order — matches
+    // how WhatsApp's own multi-select copy behaves.
+    const ordered = Array.from(document.querySelectorAll('.bubble-recv, .bubble-sent'))
+      .filter(b => selectedBubbles.has(b));
+    const text = ordered.map(getBubbleText).join('\n');
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast(`Copied ${ordered.length} message${ordered.length !== 1 ? 's' : ''}`);
+    } catch (e) {
+      showToast('Could not copy — try again');
+    }
+    exitSelectionMode();
   }
 
   function renderMessageBody(m) {
@@ -704,16 +856,29 @@
     bubble.classList.toggle('bubble-pending-error', label.startsWith('✕'));
   }
 
+  // Polls cr-status on an interval instead of holding an SSE connection open
+  // for the reply's whole lifetime — that held a gunicorn thread hostage for
+  // as long as the reply was pending (seconds up to hours, waiting on Meta's
+  // template approval), and a few of these in flight at once could exhaust
+  // the site's whole thread pool, stalling unrelated page loads for everyone.
+  // A poll's request completes in milliseconds and frees its thread right away.
+  async function pollCRStatus(cr_id) {
+    try {
+      const res  = await fetch(`${API}/cr-status/${cr_id}`);
+      const data = await res.json();
+      handlePendingStatus(cr_id, data.status);
+    } catch (e) {}
+  }
+
   function attachCRStream(cr_id) {
     if (crStreams.has(cr_id)) return;
-    const es = new EventSource(`${API}/cr-status/${cr_id}`);
-    es.onmessage = e => { handlePendingStatus(cr_id, JSON.parse(e.data).status); };
-    crStreams.set(cr_id, es);
+    crStreams.set(cr_id, setInterval(() => pollCRStatus(cr_id), 2000));
+    pollCRStatus(cr_id); // read immediately instead of waiting a full interval
   }
 
   function detachCRStream(cr_id) {
-    const es = crStreams.get(cr_id);
-    if (es) { es.close(); crStreams.delete(cr_id); }
+    const timer = crStreams.get(cr_id);
+    if (timer) { clearInterval(timer); crStreams.delete(cr_id); }
   }
 
   function handlePendingStatus(cr_id, status) {
@@ -753,6 +918,7 @@
     document.getElementById('conv-search-bar').classList.remove('hide-on-thread');
     document.body.classList.remove('no-scroll');
     threadHistoryPushed = false;
+    exitSelectionMode();
   }
 
   // Bound to the on-screen back buttons. Goes through history.back() so it
@@ -910,6 +1076,22 @@
     const item = e.target.closest('.conv-item');
     if (item) openConversation(item.dataset.phone, item.dataset.name);
   });
+
+  // Delegated on the static #thread-messages container (not the bubbles
+  // themselves, which get replaced wholesale on every re-render) so these
+  // keep working across conversation switches and message refreshes.
+  const threadMessagesEl = document.getElementById('thread-messages');
+  threadMessagesEl.addEventListener('mousedown',  onBubblePressStart);
+  threadMessagesEl.addEventListener('touchstart', onBubblePressStart, { passive: true });
+  threadMessagesEl.addEventListener('mousemove',  onBubblePressMove);
+  threadMessagesEl.addEventListener('touchmove',  onBubblePressMove, { passive: true });
+  threadMessagesEl.addEventListener('mouseup',    onBubblePressEnd);
+  threadMessagesEl.addEventListener('touchend',   onBubblePressEnd);
+  threadMessagesEl.addEventListener('touchcancel', onBubblePressEnd);
+  threadMessagesEl.addEventListener('contextmenu', (e) => {
+    if (bubbleFromEvent(e)) e.preventDefault(); // suppress the native long-press menu on a message
+  });
+  threadMessagesEl.addEventListener('click', onBubbleClickCapture, true);
 
   setInterval(loadConversations, 20000);
   loadSidebarStatus();

@@ -2,7 +2,6 @@ from flask import Blueprint, request, jsonify, Response, session
 import requests as http
 from db import get_conn, put_conn
 from routes.webhook import save_message
-import json
 import time
 import threading
 import secrets
@@ -505,30 +504,25 @@ def cr_active():
     return jsonify({'active': bool(jobs), 'jobs': jobs})
 
 
-# GET /api/replies/cr-status/<cr_id>  — SSE stream
-@replies_bp.route('/cr-status/<cr_id>')
-def cr_status_stream(cr_id):
-    def generate():
-        while True:
-            # Read from DB so it works across multiple gunicorn workers
-            try:
-                conn = get_conn()
-                cur  = conn.cursor()
-                cur.execute('SELECT status FROM counter_replies WHERE id = %s', (cr_id,))
-                row = cur.fetchone()
-                cur.close()
-                put_conn(conn)
-                status = row[0] if row else 'pending_approval'
-            except Exception:
-                status = 'pending_approval'
-            yield f"data: {json.dumps({'status': status})}\n\n"
-            done = status in ('sent', 'rejected', 'timeout') or status.startswith('send_failed')
-            if done:
-                break
-            time.sleep(2)
-
-    return Response(
-        generate(),
-        mimetype='text/event-stream',
-        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
-    )
+# GET /api/replies/cr-status/<cr_id>  — single status read, polled by the
+# client on an interval. Used to be an SSE stream that held a gunicorn thread
+# in a sleep-loop for the reply's entire lifetime (seconds up to hours, while
+# waiting on Meta's template approval). With only a handful of gunicorn
+# threads total, a few of these open at once (plus bulk-send progress
+# streams) could exhaust the whole thread pool and stall every other request
+# on the site — including unrelated page loads — until they finished. A plain
+# read like this returns immediately and frees its thread right away.
+@replies_bp.route('/cr-status/<cr_id>', methods=['GET'])
+def cr_status(cr_id):
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute('SELECT status FROM counter_replies WHERE id = %s', (cr_id,))
+        row = cur.fetchone()
+        cur.close()
+        status = row[0] if row else 'pending_approval'
+        return jsonify({'status': status})
+    except Exception:
+        return jsonify({'status': 'pending_approval'})
+    finally:
+        put_conn(conn)

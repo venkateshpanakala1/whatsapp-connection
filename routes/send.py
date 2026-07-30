@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, Response, session
+from flask import Blueprint, request, jsonify, session
 import requests as http
 from db import get_conn, put_conn
 import json
@@ -529,24 +529,3 @@ def send_history():
         return jsonify({'error': str(e)}), 500
     finally:
         put_conn(conn)
-
-
-# GET /api/send/progress/<job_id>  — SSE stream
-@send_bp.route('/progress/<job_id>')
-def progress(job_id):
-    if not get_job(job_id):
-        return jsonify({'error': 'Job not found'}), 404
-
-    def generate():
-        while True:
-            job = get_job(job_id) or {}
-            yield f"data: {json.dumps(job)}\n\n"
-            if job.get('status') in ('done', 'cancelled'):
-                break
-            time.sleep(1)
-
-    return Response(
-        generate(),
-        mimetype='text/event-stream',
-        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}
-    )

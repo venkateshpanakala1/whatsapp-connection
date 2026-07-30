@@ -15,7 +15,7 @@ function isStandalone() {
 // before the rest of the page parses, so a restricted screen never actually
 // renders when opened from the home-screen icon.
 (function restrictInstalledAppToReplies() {
-  const RESTRICTED_PATHS = ['/', '/templates', '/contacts', '/send', '/history'];
+  const RESTRICTED_PATHS = ['/', '/templates', '/contacts', '/send', '/history', '/budget'];
   if (isStandalone() && RESTRICTED_PATHS.includes(window.location.pathname)) {
     window.location.replace('/replies');
   }
@@ -74,6 +74,12 @@ async function installApp() {
 }
 
 if ('serviceWorker' in navigator) {
+  // Whether this page load was already controlled by a service worker before
+  // registration even runs — false only on the very first install (e.g. right
+  // after "Add to Home Screen"), true on every later visit. Needed below so
+  // that first-ever activation doesn't get treated as "an update landed".
+  const hadController = !!navigator.serviceWorker.controller;
+
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   });
@@ -82,9 +88,17 @@ if ('serviceWorker' in navigator) {
   // update requires a manual second refresh to actually show up. Reload once
   // automatically when control changes instead. Guarded so it can only ever
   // fire once per page (a controllerchange loop would otherwise reload forever).
+  //
+  // But controllerchange also fires on the very first activation right after
+  // install (self.clients.claim() in sw.js claims this page for the first
+  // time, going from "no controller" to "controlled") — not just on real
+  // updates. Reloading then interrupted whatever the user was doing (e.g.
+  // typing their email/password on the login screen seconds after installing
+  // the app) for no reason, since there was no stale cache to refresh from.
+  // Only reload when a service worker was already controlling this page.
   let reloadedForNewWorker = false;
   navigator.serviceWorker.addEventListener('controllerchange', () => {
-    if (reloadedForNewWorker) return;
+    if (!hadController || reloadedForNewWorker) return;
     reloadedForNewWorker = true;
     window.location.reload();
   });
