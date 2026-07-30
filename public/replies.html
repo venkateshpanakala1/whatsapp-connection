@@ -427,8 +427,19 @@
       conversations = data.conversations || [];
       renderConversationList();
     } catch (e) {
-      document.getElementById('conv-list').innerHTML =
-        `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+      // This runs on an unconditional 20s background interval, including
+      // while a thread is open and the list is hidden — a single transient
+      // network hiccup there (common on mobile: a cell handoff, brief
+      // connectivity blip) shouldn't wipe out a list that was already
+      // loaded and working, only to have the next refresh silently fix it
+      // a couple seconds later. That's what made the list flash "Error:
+      // Failed to fetch" for a moment right when reopening it after
+      // closing a thread. Only show the error state if there's nothing
+      // to fall back on yet (e.g. this is the very first load).
+      if (!conversations.length) {
+        document.getElementById('conv-list').innerHTML =
+          `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+      }
     }
   }
 
@@ -443,6 +454,18 @@
         </div>`;
       return;
     }
+
+    // Unread conversations float to the top as their own group (most recent
+    // unread first); once a conversation has no unread messages it drops
+    // back into plain recency order. Sorting here (not just trusting the
+    // backend's order) means the optimistic unread_count=0 set in
+    // openConversation() re-sorts the list the instant a thread is opened,
+    // not just on the next periodic refresh.
+    conversations.sort((a, b) => {
+      const unreadRank = (b.unread_count > 0 ? 1 : 0) - (a.unread_count > 0 ? 1 : 0);
+      if (unreadRank !== 0) return unreadRank;
+      return new Date(b.received_at) - new Date(a.received_at);
+    });
 
     const query    = (document.getElementById('conv-search')?.value || '').trim().toLowerCase();
     const filtered = query

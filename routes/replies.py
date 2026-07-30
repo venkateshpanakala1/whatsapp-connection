@@ -271,7 +271,9 @@ def backfill_reply_contact_names():
 
 
 # GET /api/replies/conversations
-# One row per contact (most-recent activity first), like a WhatsApp chat list.
+# One row per contact, unread conversations first (most recent unread on
+# top), then everything else by most-recent activity — like a WhatsApp chat
+# list with unread priority.
 @replies_bp.route('/conversations', methods=['GET'])
 def list_conversations():
     user_id = session.get('user_id')
@@ -297,7 +299,7 @@ def list_conversations():
                    COALESCE(unread.cnt, 0) as unread_count
             FROM latest
             LEFT JOIN unread ON unread.from_phone = latest.from_phone
-            ORDER BY latest.received_at DESC
+            ORDER BY (COALESCE(unread.cnt, 0) > 0) DESC, latest.received_at DESC
         """, (user_id, user_id))
         rows = cur.fetchall()
         cur.close()

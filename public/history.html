@@ -94,10 +94,11 @@
   <!-- History of past runs -->
   <div class="card card-wide" id="history-section">
     <div class="card-hdr">
-      <div class="card-title">Recent Sends</div>
+      <div class="card-title">Recent Sends <span id="history-count-label" style="font-size:11px;color:var(--text-3);font-weight:400"></span></div>
       <button class="btn btn-outline btn-sm" onclick="loadHistory()">↻ Refresh</button>
     </div>
     <div id="history-list"><div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div></div>
+    <div id="history-pagination" style="display:none;align-items:center;justify-content:center;gap:14px;margin-top:18px"></div>
   </div>
 </div>
 
@@ -202,20 +203,40 @@
     return 'badge-gray';
   }
 
+  const HISTORY_PAGE_SIZE = 10;
+  let historyPage = 1;
+
   async function loadHistory() {
     const el = document.getElementById('history-list');
     el.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>';
+    document.getElementById('history-pagination').style.display = 'none';
     try {
       const res  = await fetch(`${API}/history`);
       const data = await res.json();
       historyJobs = data.jobs || [];
+      document.getElementById('history-count-label').textContent = historyJobs.length ? `(${historyJobs.length} total)` : '';
       if (!historyJobs.length) {
         el.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div class="empty-text">No sends yet.</div><div class="empty-sub">Your bulk send history will appear here.</div></div>';
         return;
       }
-      el.innerHTML = `<div class="table-wrap"><table>
-        <thead><tr><th>File</th><th>Template</th><th>Sent</th><th>Failed</th><th>Total</th><th>Status</th><th>Date</th><th></th></tr></thead>
-        <tbody>${historyJobs.map((j, i) => `
+      historyPage = 1;
+      renderHistoryPage();
+    } catch (e) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+    }
+  }
+
+  function renderHistoryPage() {
+    const totalPages = Math.max(1, Math.ceil(historyJobs.length / HISTORY_PAGE_SIZE));
+    historyPage = Math.min(Math.max(1, historyPage), totalPages);
+    const start = (historyPage - 1) * HISTORY_PAGE_SIZE;
+    const pageJobs = historyJobs.slice(start, start + HISTORY_PAGE_SIZE);
+
+    document.getElementById('history-list').innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>File</th><th>Template</th><th>Sent</th><th>Failed</th><th>Total</th><th>Status</th><th>Date</th><th></th></tr></thead>
+      <tbody>${pageJobs.map((j, localI) => {
+        const i = start + localI; // index into the full historyJobs array, not this page's slice
+        return `
           <tr>
             <td>${esc(j.source_file || '—')}</td>
             <td>${esc(j.template_name || '—')}</td>
@@ -225,12 +246,29 @@
             <td><span class="badge ${statusBadgeClass(j.status)}">${esc(j.status)}</span></td>
             <td>${j.created_at ? new Date(j.created_at).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'}) : ''}</td>
             <td><button class="btn btn-outline btn-sm" onclick="showJobAnalytics(${i})">📊 Analytics</button></td>
-          </tr>`).join('')}
-        </tbody>
-      </table></div>`;
-    } catch (e) {
-      el.innerHTML = `<div class="empty-state"><div class="empty-text">Error: ${e.message}</div></div>`;
+          </tr>`;
+      }).join('')}
+      </tbody>
+    </table></div>`;
+
+    const pag = document.getElementById('history-pagination');
+    if (historyJobs.length <= HISTORY_PAGE_SIZE) {
+      pag.style.display = 'none';
+      pag.innerHTML = '';
+      return;
     }
+    pag.style.display = 'flex';
+    pag.innerHTML = `
+      <button class="btn btn-outline btn-sm" onclick="changeHistoryPage(-1)" ${historyPage === 1 ? 'disabled' : ''}>‹ Prev</button>
+      <span style="font-size:12.5px;color:var(--text-2)">Page ${historyPage} of ${totalPages}</span>
+      <button class="btn btn-outline btn-sm" onclick="changeHistoryPage(1)" ${historyPage === totalPages ? 'disabled' : ''}>Next ›</button>
+    `;
+  }
+
+  function changeHistoryPage(delta) {
+    historyPage += delta;
+    renderHistoryPage();
+    document.getElementById('history-list').scrollIntoView({ block: 'nearest' });
   }
 
   // Funnel stages (Sent → Delivered → Read) use one hue stepped light→dark,
