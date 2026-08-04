@@ -21,16 +21,20 @@
     { href: '/send',      icon: '📤', label: 'Bulk Send' },
     { href: '/history',   icon: '📊', label: 'History' },
     { href: '/budget',    icon: '💰', label: 'Budget' },
-    // Find Names is disabled — deliberately left out of the nav, not
-    // deleted. The page and its backend still work fine at /name-finder if
-    // linked to directly; re-enable it by adding its row back here:
-    // { href: '/name-finder', icon: '🔎', label: 'Find Names' },
+    // Find Names is disabled — shown in the nav so it's visible, but
+    // dimmed and unclickable (rendered as a <span>, not a link). The page
+    // and its backend still work fine at /name-finder if linked to
+    // directly; re-enable it by just removing `disabled: true` below.
+    { href: '/name-finder', icon: '🔎', label: 'Find Names', disabled: true },
     { href: '/replies',   icon: '💬', label: 'Replies' },
   ];
 
   const path = window.location.pathname;
   const navHtml = NAV_ITEMS.map((item) => {
     if (item.section) return `<div class="nav-label">${item.section}</div>`;
+    if (item.disabled) {
+      return `<span class="nav-item disabled" title="Coming soon"><span class="nav-icon">${item.icon}</span> ${item.label}</span>`;
+    }
     const active = item.href === path ? ' active' : '';
     return `<a href="${item.href}" class="nav-item${active}"><span class="nav-icon">${item.icon}</span> ${item.label}</a>`;
   }).join('');
