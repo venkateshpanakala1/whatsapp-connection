@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, session, Response
 import requests as http
 from db import get_conn, put_conn
 import secrets
+from urllib.parse import urlparse
 
 templates_bp = Blueprint('templates', __name__)
 META_API = 'https://graph.facebook.com/v22.0'
@@ -34,6 +35,30 @@ def get_app_id(access_token):
         return res.json().get('data', {}).get('app_id')
     except:
         return None
+
+
+def build_visit_website_button(button_text, button_url):
+    """Validate and return Meta's static URL call-to-action component."""
+    button_text = (button_text or '').strip()
+    button_url = (button_url or '').strip()
+
+    if not button_text and not button_url:
+        return None, None
+    if not button_text or not button_url:
+        return None, 'Website button text and URL are both required'
+    if len(button_text) > 25:
+        return None, 'Website button text cannot exceed 25 characters'
+    if len(button_url) > 2000:
+        return None, 'Website URL cannot exceed 2000 characters'
+
+    parsed = urlparse(button_url)
+    if parsed.scheme not in ('http', 'https') or not parsed.netloc:
+        return None, 'Website URL must be a complete http:// or https:// address'
+
+    return {
+        'type': 'BUTTONS',
+        'buttons': [{'type': 'URL', 'text': button_text, 'url': button_url}]
+    }, None
 
 
 # GET /api/templates/list
@@ -150,9 +175,15 @@ def create_template():
         header_handle = body.get('header_handle', '')
         body_text     = (body.get('body_text') or '').strip()
         footer_text   = (body.get('footer_text') or '').strip()
+        button_text   = body.get('button_text') or ''
+        button_url    = body.get('button_url') or ''
 
         if not name or not body_text:
             return jsonify({'error': 'Template name and body text are required'}), 400
+
+        website_button, button_error = build_visit_website_button(button_text, button_url)
+        if button_error:
+            return jsonify({'error': button_error}), 400
 
         # Build Meta API payload
         components = []
@@ -168,6 +199,9 @@ def create_template():
 
         if footer_text:
             components.append({'type': 'FOOTER', 'text': footer_text})
+
+        if website_button:
+            components.append(website_button)
 
         payload = {
             'name': name,
@@ -222,8 +256,8 @@ def create_template():
 # resubmits it to Meta for review. Meta ties a template's identity to its
 # name+language pair, so those can't be changed here — only the content.
 # Meta's edit endpoint replaces the whole components array, so any existing
-# HEADER component must be echoed back unchanged or it would be silently
-# dropped from the template.
+# HEADER and BUTTONS components must be echoed back unchanged or they would
+# be silently dropped from the template.
 @templates_bp.route('/edit', methods=['POST'])
 def edit_template():
     try:
@@ -237,6 +271,7 @@ def edit_template():
         body_text   = (body.get('body_text') or '').strip()
         footer_text = (body.get('footer_text') or '').strip()
         header_component = body.get('header_component')  # unchanged pass-through, or None
+        buttons_component = body.get('buttons_component')  # unchanged pass-through, or None
 
         if not template_id or not body_text:
             return jsonify({'error': 'Template id and body text are required'}), 400
@@ -249,6 +284,8 @@ def edit_template():
         components.append({'type': 'BODY', 'text': body_text})
         if footer_text:
             components.append({'type': 'FOOTER', 'text': footer_text})
+        if buttons_component:
+            components.append(buttons_component)
 
         res = http.post(
             f"{META_API}/{template_id}",

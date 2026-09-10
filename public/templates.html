@@ -211,6 +211,15 @@
           <input type="text" id="tpl-footer" placeholder="e.g. Reply STOP to unsubscribe" maxlength="60" />
         </div>
 
+        <div class="form-group">
+          <label>Visit Website Button <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+          <div class="row-2">
+            <input type="text" id="tpl-button-text" placeholder="Button text, e.g. Visit Website" maxlength="25" />
+            <input type="url" id="tpl-button-url" placeholder="https://example.com" maxlength="2000" />
+          </div>
+          <p class="hint">Adds one WhatsApp call-to-action button. Enter both a label (up to 25 characters) and a public http:// or https:// URL.</p>
+        </div>
+
         <div class="btn-row">
           <button class="btn-preview" onclick="openPreview()">👁 Preview</button>
           <button class="btn-create" id="create-btn" onclick="createTemplate()">✨ Create Template</button>
@@ -240,6 +249,7 @@
         <div id="prev-header"></div>
         <div class="wa-body"   id="prev-body"></div>
         <div class="wa-footer" id="prev-footer"></div>
+        <div id="prev-buttons"></div>
         <div class="wa-time"   id="prev-time"></div>
       </div>
     </div>
@@ -318,7 +328,9 @@
     const html = list.map(t => {
       const body   = t.components?.find(c => c.type === 'BODY')?.text || '';
       const header = t.components?.find(c => c.type === 'HEADER');
+      const websiteButton = t.components?.find(c => c.type === 'BUTTONS')?.buttons?.find(b => b.type === 'URL');
       const tag    = header ? `<span style="font-size:10.5px;color:var(--text-3);font-weight:600">[${header.format}]</span> ` : '';
+      const websiteMeta = websiteButton ? ` &middot; Website: ${esc(websiteButton.text || 'Visit Website')}` : '';
       const needsMedia = header && ['IMAGE','VIDEO','DOCUMENT'].includes(header.format);
       const attachHtml = needsMedia ? `
           <label class="btn-attach" style="margin-top:8px;font-size:11px;font-weight:600;color:var(--g-500);cursor:pointer;display:block;text-align:right">
@@ -346,7 +358,7 @@
           <div class="tpl-info">
             <div class="tpl-name">${t.name}</div>
             <div class="tpl-body">${tag}${body.substring(0,130)}${body.length > 130 ? '…' : ''}</div>
-            <div class="tpl-meta">${t.category} &middot; ${t.language}</div>
+            <div class="tpl-meta">${t.category} &middot; ${t.language}${websiteMeta}</div>
           </div>
           <div class="tpl-card-right">
             <span class="badge ${badgeClass(t.status)}">${t.status}</span>
@@ -571,9 +583,13 @@
     const header_type = document.getElementById('tpl-header-type').value;
     const body_text   = document.getElementById('tpl-body').value.trim();
     const footer_text = document.getElementById('tpl-footer').value.trim();
+    const button_text = document.getElementById('tpl-button-text').value.trim();
+    const button_url  = document.getElementById('tpl-button-url').value.trim();
     if (!name)       return showAlert('create-alert', 'error', 'Template name is required');
     if (!body_text)  return showAlert('create-alert', 'error', 'Body text is required');
     if (body_text.length > 1024) return showAlert('create-alert', 'error', 'Body exceeds 1024 chars');
+    if ((button_text && !button_url) || (!button_text && button_url))
+      return showAlert('create-alert', 'error', 'Enter both website button text and URL, or leave both blank');
     const btn = document.getElementById('create-btn');
     btn.disabled = true; btn.textContent = 'Creating...';
     hideAlert('create-alert');
@@ -584,7 +600,7 @@
       }
       const res  = await fetch(`${API}/create`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, category, language, header_type, header_handle: uploadedHandle, body_text, footer_text }),
+        body: JSON.stringify({ name, category, language, header_type, header_handle: uploadedHandle, body_text, footer_text, button_text, button_url }),
       });
       const data = await res.json();
       if (data.success) {
@@ -612,6 +628,8 @@
     document.getElementById('tpl-name').value     = '';
     document.getElementById('tpl-body').value     = '';
     document.getElementById('tpl-footer').value   = '';
+    document.getElementById('tpl-button-text').value = '';
+    document.getElementById('tpl-button-url').value  = '';
     document.getElementById('tpl-header-type').value = 'NONE';
     document.getElementById('char-count').textContent = '0 / 1024';
     document.getElementById('upload-area').classList.remove('active');
@@ -628,6 +646,7 @@
     const headerType = document.getElementById('tpl-header-type').value;
     const bodyText   = document.getElementById('tpl-body').value.trim();
     const footerText = document.getElementById('tpl-footer').value.trim();
+    const buttonText = document.getElementById('tpl-button-text').value.trim();
     const fname      = document.getElementById('preview-fname').textContent;
     let headerHtml = '';
     if (headerType === 'IMAGE') {
@@ -654,6 +673,9 @@
     document.getElementById('prev-body').innerHTML     = formattedBody;
     document.getElementById('prev-footer').textContent = footerText;
     document.getElementById('prev-footer').style.display = footerText ? 'block' : 'none';
+    document.getElementById('prev-buttons').innerHTML = buttonText
+      ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,0,0,.08);text-align:center;color:#008069;font-weight:600;font-size:13px">${esc(buttonText)} ↗</div>`
+      : '';
     document.getElementById('prev-time').textContent   = timeStr;
     document.getElementById('preview-modal').classList.add('open');
   }
@@ -713,6 +735,7 @@
     if (body_text.length > 1024) return showAlert('edit-alert', 'error', 'Body exceeds 1024 chars');
 
     const headerComponent = editingTemplate.components?.find(c => c.type === 'HEADER') || null;
+    const buttonsComponent = editingTemplate.components?.find(c => c.type === 'BUTTONS') || null;
 
     const btn = document.getElementById('edit-submit-btn');
     btn.disabled = true; btn.textContent = 'Resubmitting...';
@@ -722,7 +745,7 @@
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id: editingTemplate.id, category, body_text, footer_text,
-          header_component: headerComponent,
+          header_component: headerComponent, buttons_component: buttonsComponent,
         }),
       });
       const data = await res.json();
