@@ -165,6 +165,10 @@ def init_db():
         # appear unread; new incoming rows explicitly set FALSE at insert time.
         cur.execute("ALTER TABLE replies ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT TRUE;")
         cur.execute("ALTER TABLE template_media ADD COLUMN IF NOT EXISTS filename VARCHAR(255);")
+        # Local snapshot of CTA buttons. Meta remains the source of truth for
+        # live templates, but retaining this preserves the submitted config
+        # for tenant data/export and future UI features.
+        cur.execute("ALTER TABLE whatsapp_templates ADD COLUMN IF NOT EXISTS buttons JSONB DEFAULT '[]'::jsonb;")
         # Migrations: add source_file + user_id to all tables
         cur.execute("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS source_file VARCHAR(255);")
         cur.execute("ALTER TABLE whatsapp_connections ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")

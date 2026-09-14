@@ -3,6 +3,7 @@ import requests as http
 from db import get_conn, put_conn
 import secrets
 import re
+import json
 from urllib.parse import urlparse
 
 templates_bp = Blueprint('templates', __name__)
@@ -153,13 +154,20 @@ def upload_media():
         if not app_id:
             return jsonify({'error': 'Could not get App ID from token'}), 400
 
-        # Step 1: Create upload session
+        # Step 1: Create a resumable-upload session. Meta identifies the
+        # eventual file format from this JSON metadata (including its name),
+        # so query parameters alone can produce a handle that later fails
+        # template creation with error 2388084, "File type not supported".
         session_res = http.post(
             f"{META_API}/{app_id}/uploads",
-            params={
+            headers={
+                'Authorization': f'Bearer {creds["access_token"]}',
+                'Content-Type': 'application/json',
+            },
+            json={
                 'file_length': file_size,
                 'file_type': mime_type,
-                'access_token': creds['access_token']
+                'file_name': file.filename or 'template-media',
             },
             timeout=30
         )
@@ -175,7 +183,9 @@ def upload_media():
             headers={
                 'Authorization': f"OAuth {creds['access_token']}",
                 'file_offset': '0',
-                'Content-Type': mime_type
+                # The upload session already received the actual MIME type.
+                # Meta's resumable-upload endpoint expects raw bytes here.
+                'Content-Type': 'application/octet-stream'
             },
             data=file_data,
             timeout=60
@@ -274,11 +284,11 @@ def create_template():
             cur = conn.cursor()
             cur.execute("""
                 INSERT INTO whatsapp_templates
-                    (user_id, name, category, language, header_type, body_text, footer_text, status, meta_template_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (user_id, name, category, language, header_type, body_text, footer_text, buttons, status, meta_template_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 user_id, name, category, language, header_type,
-                body_text, footer_text or None,
+                body_text, footer_text or None, json.dumps((website_button or {}).get('buttons', [])),
                 data.get('status', 'PENDING'), data.get('id')
             ))
             conn.commit()
