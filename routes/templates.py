@@ -37,32 +37,28 @@ def get_app_id(access_token):
         return None
 
 
-def build_visit_website_buttons(buttons):
-    """Validate Meta's maximum of two static URL call-to-action buttons."""
-    if not buttons:
+def build_visit_website_button(button_text, button_url):
+    """Validate and return Meta's static URL call-to-action component."""
+    button_text = (button_text or '').strip()
+    button_url = (button_url or '').strip()
+
+    if not button_text and not button_url:
         return None, None
-    if not isinstance(buttons, list) or len(buttons) > 2:
-        return None, 'A template can include up to two Visit Website buttons'
+    if not button_text or not button_url:
+        return None, 'Website button text and URL are both required'
+    if len(button_text) > 25:
+        return None, 'Website button text cannot exceed 25 characters'
+    if len(button_url) > 2000:
+        return None, 'Website URL cannot exceed 2000 characters'
 
-    meta_buttons = []
-    for index, button in enumerate(buttons, start=1):
-        if not isinstance(button, dict):
-            return None, f'Website button {index} is invalid'
-        button_text = (button.get('text') or '').strip()
-        button_url = (button.get('url') or '').strip()
-        if not button_text or not button_url:
-            return None, f'Website button {index} needs both text and URL'
-        if len(button_text) > 25:
-            return None, f'Website button {index} text cannot exceed 25 characters'
-        if len(button_url) > 2000:
-            return None, f'Website button {index} URL cannot exceed 2000 characters'
+    parsed = urlparse(button_url)
+    if parsed.scheme not in ('http', 'https') or not parsed.netloc:
+        return None, 'Website URL must be a complete http:// or https:// address'
 
-        parsed = urlparse(button_url)
-        if parsed.scheme not in ('http', 'https') or not parsed.netloc:
-            return None, f'Website button {index} URL must be a complete http:// or https:// address'
-        meta_buttons.append({'type': 'URL', 'text': button_text, 'url': button_url})
-
-    return {'type': 'BUTTONS', 'buttons': meta_buttons}, None
+    return {
+        'type': 'BUTTONS',
+        'buttons': [{'type': 'URL', 'text': button_text, 'url': button_url}]
+    }, None
 
 
 # GET /api/templates/list
@@ -179,17 +175,13 @@ def create_template():
         header_handle = body.get('header_handle', '')
         body_text     = (body.get('body_text') or '').strip()
         footer_text   = (body.get('footer_text') or '').strip()
-        website_buttons = body.get('website_buttons')
-        # Backwards compatible with clients running the original single-CTA UI.
-        if website_buttons is None:
-            button_text = body.get('button_text') or ''
-            button_url = body.get('button_url') or ''
-            website_buttons = [{'text': button_text, 'url': button_url}] if button_text or button_url else []
+        button_text   = body.get('button_text') or ''
+        button_url    = body.get('button_url') or ''
 
         if not name or not body_text:
             return jsonify({'error': 'Template name and body text are required'}), 400
 
-        website_button, button_error = build_visit_website_buttons(website_buttons)
+        website_button, button_error = build_visit_website_button(button_text, button_url)
         if button_error:
             return jsonify({'error': button_error}), 400
 
