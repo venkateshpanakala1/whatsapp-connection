@@ -66,23 +66,20 @@
       transition: opacity var(--t);
     }
 
-    /* ── Btn row for preview + create ── */
-    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 10px; }
-    .btn-preview {
-      padding: 13px; background: var(--surface); color: var(--g-500);
-      border: 2px solid var(--g-500); border-radius: 10px;
-      font-size: 14px; font-weight: 700; cursor: pointer;
-      transition: all var(--t); font-family: inherit;
+    /* ── Template actions ──
+       Uses the shared button system so its sizing, color, focus, disabled,
+       and hover states match every other screen in the app. */
+    .template-actions {
+      display: flex;
+      align-items: stretch;
+      gap: 12px;
+      margin-top: 10px;
     }
-    .btn-preview:hover { background: rgba(37,211,102,0.12); transform: translateY(-1px); }
-    .btn-create {
-      padding: 13px; background: var(--g-500); color: #fff;
-      border: none; border-radius: 10px; font-size: 14px; font-weight: 700;
-      cursor: pointer; transition: all var(--t); font-family: inherit;
-      box-shadow: 0 2px 8px rgba(18,140,126,0.35);
+    .template-actions .btn { flex: 1 1 0; min-height: 46px; }
+    @media (max-width: 560px) {
+      .template-actions { flex-direction: column-reverse; }
+      .template-actions .btn { width: 100%; }
     }
-    .btn-create:hover:not(:disabled) { background: #0e7569; transform: translateY(-1px); }
-    .btn-create:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* ── Status reason + edit ── */
     .tpl-status-note { font-size: 11px; margin-top: 6px; max-width: 220px; text-align: right; line-height: 1.4; }
@@ -211,9 +208,9 @@
           <input type="text" id="tpl-footer" placeholder="e.g. Reply STOP to unsubscribe" maxlength="60" />
         </div>
 
-        <div class="btn-row">
-          <button class="btn-preview" onclick="openPreview()">👁 Preview</button>
-          <button class="btn-create" id="create-btn" onclick="createTemplate()">✨ Create Template</button>
+        <div class="template-actions">
+          <button class="btn btn-outline btn-lg" type="button" onclick="openPreview()">👁 Preview</button>
+          <button class="btn btn-primary btn-lg" type="button" id="create-btn" onclick="createTemplate()">✨ Create Template</button>
         </div>
         <div class="alert" id="create-alert"></div>
       </div>
@@ -284,7 +281,7 @@
 
       <div style="display:flex;gap:10px;margin-top:12px">
         <button class="btn btn-outline" style="flex:1" onclick="closeEditModal()">Cancel</button>
-        <button class="btn-create" style="flex:1" id="edit-submit-btn" onclick="submitEdit()">Resubmit for Review</button>
+        <button class="btn btn-primary" style="flex:1" id="edit-submit-btn" onclick="submitEdit()">Resubmit for Review</button>
       </div>
     </div>
   </div>
