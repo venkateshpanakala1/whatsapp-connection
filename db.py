@@ -161,6 +161,17 @@ def init_db():
                 data BYTEA NOT NULL,
                 created_at TIMESTAMP DEFAULT NOW()
             );
+
+            -- A tenant can remove a Meta template from this app's local view
+            -- without deleting it from Meta. This is intentionally separate
+            -- from whatsapp_templates, which only stores templates created
+            -- through this app.
+            CREATE TABLE IF NOT EXISTS hidden_whatsapp_templates (
+                user_id INTEGER REFERENCES users(id) NOT NULL,
+                template_name VARCHAR(100) NOT NULL,
+                hidden_at TIMESTAMP DEFAULT NOW(),
+                PRIMARY KEY (user_id, template_name)
+            );
         """)
         # Defaults existing rows to read so old history doesn't suddenly
         # appear unread; new incoming rows explicitly set FALSE at insert time.

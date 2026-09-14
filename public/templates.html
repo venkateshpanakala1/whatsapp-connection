@@ -96,6 +96,12 @@
       padding: 0; text-align: right;
     }
     .btn-edit-tpl:hover { text-decoration: underline; }
+    .btn-delete-tpl {
+      background: none; border: none; margin-top: 6px; padding: 0;
+      color: #fca5a5; cursor: pointer; font: inherit; font-size: 11px;
+      font-weight: 600; text-align: right;
+    }
+    .btn-delete-tpl:hover { color: #fecaca; text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -380,6 +386,7 @@
             ${statusNoteHtml}
             ${editHtml}
             ${attachHtml}
+            <button class="btn-delete-tpl" type="button" onclick="deleteLocalTemplate('${t.name.replace(/'/g, "\\'")}')">🗑 Remove locally</button>
           </div>
         </div>`;
     }).join('');
@@ -670,6 +677,21 @@
     document.getElementById('add-website-link-wrap').style.display = 'none';
     document.getElementById('remove-website-link-wrap').style.display = 'flex';
     document.getElementById('tpl-button-text-2').focus();
+  }
+
+  async function deleteLocalTemplate(name) {
+    if (!confirm(`Remove "${name}" from this app? It will remain available in Meta.`)) return;
+    try {
+      const res = await fetch(`${API}/local/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!data.success) return alert(data.error || 'Could not remove the template');
+      tplData.data = tplData.data.filter(t => t.name !== name);
+      tplData.all = tplData.all.filter(t => t.name !== name);
+      tplData.total = tplData.all.length;
+      renderTplLists();
+    } catch (e) {
+      alert('Could not remove the template: ' + e.message);
+    }
   }
 
   function hideSecondWebsiteLink() {
