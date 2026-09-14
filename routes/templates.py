@@ -2,12 +2,10 @@ from flask import Blueprint, request, jsonify, session, Response
 import requests as http
 from db import get_conn, put_conn
 import secrets
-import re
 from urllib.parse import urlparse
 
 templates_bp = Blueprint('templates', __name__)
 META_API = 'https://graph.facebook.com/v22.0'
-BODY_VARIABLE_RE = re.compile(r'\{\{(\d+)\}\}')
 
 
 def get_wa_credentials(user_id):
@@ -65,36 +63,6 @@ def build_visit_website_buttons(buttons):
         meta_buttons.append({'type': 'URL', 'text': button_text, 'url': button_url})
 
     return {'type': 'BUTTONS', 'buttons': meta_buttons}, None
-
-
-def build_body_component(body_text):
-    """Build BODY and the example values Meta requires for {{1}} variables."""
-    occurrences = [int(match) for match in BODY_VARIABLE_RE.findall(body_text)]
-    if not occurrences:
-        return {'type': 'BODY', 'text': body_text}, None
-
-    # Meta requires sequential positional variables and a sample value for
-    # each distinct variable while the template is submitted for review.
-    variable_numbers = sorted(set(occurrences))
-    expected = list(range(1, len(variable_numbers) + 1))
-    if variable_numbers != expected:
-        return None, 'Body variables must be consecutive and in order: {{1}}, {{2}}, {{3}}…'
-
-    return {
-        'type': 'BODY',
-        'text': body_text,
-        'example': {'body_text': [[f'example_{number}' for number in variable_numbers]]}
-    }, None
-
-
-def meta_error_message(data):
-    """Extract Meta's useful nested error, rather than only 'Invalid parameter'."""
-    error = (data or {}).get('error') or {}
-    detail = error.get('error_user_msg') or error.get('error_data', {}).get('details') or error.get('message')
-    code = error.get('code')
-    subcode = error.get('error_subcode')
-    suffix = f' (code {code}' + (f', subcode {subcode}' if subcode else '') + ')' if code else ''
-    return (detail or 'Meta rejected the template request') + suffix
 
 
 # GET /api/templates/list
@@ -224,9 +192,6 @@ def create_template():
         website_button, button_error = build_visit_website_buttons(website_buttons)
         if button_error:
             return jsonify({'error': button_error}), 400
-        body_component, body_error = build_body_component(body_text)
-        if body_error:
-            return jsonify({'error': body_error}), 400
 
         # Build Meta API payload
         components = []
@@ -238,7 +203,7 @@ def create_template():
                 'example': {'header_handle': [header_handle]}
             })
 
-        components.append(body_component)
+        components.append({'type': 'BODY', 'text': body_text})
 
         if footer_text:
             components.append({'type': 'FOOTER', 'text': footer_text})
@@ -264,9 +229,7 @@ def create_template():
         )
         data = res.json()
         if 'error' in data:
-            detail = meta_error_message(data)
-            print(f'[templates] create failed for name={name}: {data["error"]}')
-            return jsonify({'error': detail}), 400
+            return jsonify({'error': data['error']['message']}), 400
 
         # Save to local DB
         conn = get_conn()
@@ -348,7 +311,7 @@ def edit_template():
             # with the actually useful explanation buried in error_user_msg or
             # error_data.details — surface whichever is most specific instead
             # of just the generic one, and log the raw error for debugging.
-            detail = meta_error_message(data)
+            detail = err.get('error_user_msg') or err.get('error_data', {}).get('details') or err.get('message')
             print(f'[templates] edit failed for template_id={template_id}: {err}')
             return jsonify({'error': detail}), 400
         return jsonify({'success': True, 'message': 'Template updated and resubmitted for review'})
