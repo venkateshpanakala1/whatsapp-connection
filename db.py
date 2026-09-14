@@ -162,6 +162,15 @@ def init_db():
                 created_at TIMESTAMP DEFAULT NOW()
             );
 
+            -- Keeps a tenant's local removal independent from Meta's own
+            -- template catalogue, which is the source for the list endpoint.
+            CREATE TABLE IF NOT EXISTS hidden_whatsapp_templates (
+                user_id INTEGER REFERENCES users(id) NOT NULL,
+                template_name VARCHAR(100) NOT NULL,
+                hidden_at TIMESTAMP DEFAULT NOW(),
+                PRIMARY KEY (user_id, template_name)
+            );
+
         """)
         # Defaults existing rows to read so old history doesn't suddenly
         # appear unread; new incoming rows explicitly set FALSE at insert time.

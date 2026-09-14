@@ -386,7 +386,7 @@
             ${statusNoteHtml}
             ${editHtml}
             ${attachHtml}
-            <button class="btn-delete-tpl" type="button" onclick="deleteTemplate('${t.id}', '${t.name.replace(/'/g, "\\'")}')">🗑 Delete Template</button>
+            <button class="btn-delete-tpl" type="button" onclick="deleteLocalTemplate('${t.name.replace(/'/g, "\\'")}')">🗑 Remove locally</button>
           </div>
         </div>`;
     }).join('');
@@ -679,22 +679,18 @@
     document.getElementById('tpl-button-text-2').focus();
   }
 
-  async function deleteTemplate(templateId, name) {
-    if (!confirm(`Permanently delete "${name}" from Meta? This cannot be undone.`)) return;
+  async function deleteLocalTemplate(name) {
+    if (!confirm(`Remove "${name}" from this app? It will remain available in Meta.`)) return;
     try {
-      const res = await fetch(`${API}/delete/${encodeURIComponent(templateId)}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name }),
-      });
+      const res = await fetch(`${API}/local/${encodeURIComponent(name)}`, { method: 'DELETE' });
       const data = await res.json();
-      if (!data.success) return alert(data.error || 'Could not delete the template');
+      if (!data.success) return alert(data.error || 'Could not remove the template');
       tplData.data = tplData.data.filter(t => t.name !== name);
       tplData.all = tplData.all.filter(t => t.name !== name);
       tplData.total = tplData.all.length;
       renderTplLists();
     } catch (e) {
-      alert('Could not delete the template: ' + e.message);
+      alert('Could not remove the template: ' + e.message);
     }
   }
 

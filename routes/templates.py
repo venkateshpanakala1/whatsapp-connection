@@ -71,6 +71,19 @@ def parse_website_buttons(body):
     return buttons
 
 
+def get_hidden_template_names(user_id):
+    """Names removed from this tenant's local Templates view only."""
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute('SELECT template_name FROM hidden_whatsapp_templates WHERE user_id = %s', (user_id,))
+        names = {row[0] for row in cur.fetchall()}
+        cur.close()
+        return names
+    finally:
+        put_conn(conn)
+
+
 # GET /api/templates/list
 # Returns the single most recent template in `data` (what the page shows by
 # default) plus the full list in `all` / count in `total`, so the "All
@@ -96,6 +109,8 @@ def list_templates():
             url    = data.get('paging', {}).get('next')
             params = {}
 
+        hidden_names = get_hidden_template_names(user_id)
+        all_templates = [t for t in all_templates if t.get('name') not in hidden_names]
         all_templates.sort(key=lambda t: t.get('created_time', ''), reverse=True)
 
         return jsonify({
@@ -108,37 +123,38 @@ def list_templates():
         return jsonify({'error': str(e)}), 500
 
 
-# DELETE /api/templates/delete/<template_id>
-# Deletes the template from the tenant's WhatsApp Business Account at Meta.
-# Local database records are deliberately left untouched.
-@templates_bp.route('/delete/<template_id>', methods=['DELETE'])
-def delete_template(template_id):
+# DELETE /api/templates/local/<template_name>
+# Deletes the tenant's local template/media records and hides the Meta
+# template from this app. This endpoint deliberately makes no Meta request.
+@templates_bp.route('/local/<template_name>', methods=['DELETE'])
+def delete_local_template(template_name):
     user_id = session.get('user_id')
-    body = request.get_json(silent=True) or {}
-    name = (body.get('name') or '').strip()
+    name = (template_name or '').strip()
     if not user_id:
         return jsonify({'error': 'Not logged in'}), 401
-    if not template_id or not name:
-        return jsonify({'error': 'Template ID and name are required'}), 400
+    if not name:
+        return jsonify({'error': 'Template name is required'}), 400
 
-    creds = get_wa_credentials(user_id)
-    if not creds:
-        return jsonify({'error': 'WhatsApp not connected'}), 400
-
+    conn = get_conn()
     try:
-        res = http.delete(
-            f"{META_API}/{creds['waba_id']}/message_templates",
-            params={'name': name, 'hsm_id': template_id},
-            headers={'Authorization': f"Bearer {creds['access_token']}"},
-            timeout=30
-        )
-        data = res.json()
-        if res.status_code >= 400 or not data.get('success'):
-            error = data.get('error', {}).get('message', 'Meta could not delete this template')
-            return jsonify({'error': error}), 400
-        return jsonify({'success': True, 'message': f'Template "{name}" deleted from Meta'})
+        cur = conn.cursor()
+        # A tombstone is needed because the template list is read from Meta;
+        # it prevents a locally deleted row from returning after a refresh.
+        cur.execute("""
+            INSERT INTO hidden_whatsapp_templates (user_id, template_name)
+            VALUES (%s, %s)
+            ON CONFLICT (user_id, template_name) DO NOTHING
+        """, (user_id, name))
+        cur.execute('DELETE FROM template_media WHERE user_id = %s AND template_name = %s', (user_id, name))
+        cur.execute('DELETE FROM whatsapp_templates WHERE user_id = %s AND name = %s', (user_id, name))
+        conn.commit()
+        cur.close()
+        return jsonify({'success': True, 'message': f'"{name}" removed from this app'})
     except Exception as e:
+        conn.rollback()
         return jsonify({'error': str(e)}), 500
+    finally:
+        put_conn(conn)
 
 
 # POST /api/templates/upload-media
