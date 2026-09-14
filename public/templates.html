@@ -94,6 +94,42 @@
       padding: 0; text-align: right;
     }
     .btn-edit-tpl:hover { text-decoration: underline; }
+
+    /* ── Template call-to-action button ── */
+    .template-buttons { margin-bottom: 18px; }
+    .template-buttons-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .template-buttons-head label { margin-bottom: 0; }
+    .btn-add-template-button {
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      padding: 7px 12px; border: 1.5px solid var(--g-500); border-radius: 7px;
+      background: rgba(37,211,102,0.08); color: #6ee7b7; font: 600 12px inherit;
+      cursor: pointer; transition: all var(--t);
+    }
+    .btn-add-template-button:hover { background: rgba(37,211,102,0.16); border-color: var(--g-300); color: #fff; }
+    .website-button-fields {
+      display: none; margin-top: 10px; padding: 14px;
+      border: 1px solid rgba(37,211,102,0.30); border-radius: var(--r-sm);
+      background: rgba(37,211,102,0.055);
+    }
+    .website-button-fields.show { display: block; }
+    .website-button-fields input[type="text"],
+    .website-button-fields input[type="url"] {
+      width: 100%; padding: 10px 14px;
+      border: 1.5px solid rgba(255,255,255,0.18); border-radius: var(--r-sm);
+      font: 14px inherit; color: var(--text); background: rgba(255,255,255,0.05);
+      outline: none; transition: all var(--t);
+    }
+    .website-button-fields input:focus {
+      border-color: var(--g-300); box-shadow: 0 0 0 3px rgba(37,211,102,0.18);
+      background: rgba(255,255,255,0.09);
+    }
+    .website-button-fields input::placeholder { color: var(--text-3); }
+    .website-button-type { color: #6ee7b7; font-size: 12px; font-weight: 700; }
+    .btn-remove-template-button {
+      margin-left: auto; padding: 3px 0; border: 0; background: transparent;
+      color: var(--text-3); font: 600 12px inherit; cursor: pointer;
+    }
+    .btn-remove-template-button:hover { color: #fca5a5; }
   </style>
 </head>
 <body>
@@ -211,13 +247,22 @@
           <input type="text" id="tpl-footer" placeholder="e.g. Reply STOP to unsubscribe" maxlength="60" />
         </div>
 
-        <div class="form-group">
-          <label>Visit Website Button <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
-          <div class="row-2">
-            <input type="text" id="tpl-button-text" placeholder="Button text, e.g. Visit Website" maxlength="25" />
-            <input type="url" id="tpl-button-url" placeholder="https://example.com" maxlength="2000" />
+        <div class="template-buttons">
+          <div class="template-buttons-head">
+            <label>Buttons <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+            <button type="button" class="btn-add-template-button" id="add-template-button" onclick="addWebsiteButton()">＋ Add Button</button>
           </div>
-          <p class="hint">Adds one WhatsApp call-to-action button. Enter both a label (up to 25 characters) and a public http:// or https:// URL.</p>
+          <div class="website-button-fields" id="website-button-fields">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+              <span class="website-button-type">↗ Visit Website</span>
+              <button type="button" class="btn-remove-template-button" onclick="removeWebsiteButton()">Remove</button>
+            </div>
+            <div class="row-2">
+              <input type="text" id="tpl-button-text" placeholder="Button text, e.g. Visit Website" maxlength="25" />
+              <input type="url" id="tpl-button-url" placeholder="https://example.com" maxlength="2000" />
+            </div>
+            <p class="hint">One call-to-action button is allowed. Enter a label (up to 25 characters) and a public http:// or https:// URL.</p>
+          </div>
         </div>
 
         <div class="btn-row">
@@ -628,8 +673,7 @@
     document.getElementById('tpl-name').value     = '';
     document.getElementById('tpl-body').value     = '';
     document.getElementById('tpl-footer').value   = '';
-    document.getElementById('tpl-button-text').value = '';
-    document.getElementById('tpl-button-url').value  = '';
+    removeWebsiteButton();
     document.getElementById('tpl-header-type').value = 'NONE';
     document.getElementById('char-count').textContent = '0 / 1024';
     document.getElementById('upload-area').classList.remove('active');
@@ -641,6 +685,21 @@
     el.className = `alert ${type}`; el.textContent = msg; el.style.display = 'block';
   }
   function hideAlert(id) { document.getElementById(id).style.display = 'none'; }
+
+  // Meta permits a maximum of one URL CTA in this form. The control is
+  // intentionally hidden until requested, keeping the default template form clean.
+  function addWebsiteButton() {
+    document.getElementById('website-button-fields').classList.add('show');
+    document.getElementById('add-template-button').style.display = 'none';
+    document.getElementById('tpl-button-text').focus();
+  }
+
+  function removeWebsiteButton() {
+    document.getElementById('website-button-fields').classList.remove('show');
+    document.getElementById('add-template-button').style.display = 'inline-flex';
+    document.getElementById('tpl-button-text').value = '';
+    document.getElementById('tpl-button-url').value = '';
+  }
 
   function openPreview() {
     const headerType = document.getElementById('tpl-header-type').value;
