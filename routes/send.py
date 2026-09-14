@@ -476,6 +476,45 @@ def job_status(job_id):
     return jsonify({'found': True, **job})
 
 
+# DELETE /api/send/history/<job_id>
+# Removes one completed/cancelled bulk-send run and its local delivery logs.
+# This is database-only: WhatsApp messages already sent are unaffected.
+@send_bp.route('/history/<job_id>', methods=['DELETE'])
+def delete_history_job(job_id):
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    conn = get_conn()
+    cur = None
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            'SELECT status FROM send_jobs WHERE id = %s AND user_id = %s FOR UPDATE',
+            (job_id, user_id)
+        )
+        row = cur.fetchone()
+        if not row:
+            conn.rollback()
+            cur.close()
+            return jsonify({'error': 'Send history entry not found'}), 404
+        if row[0] not in ('done', 'cancelled'):
+            conn.rollback()
+            cur.close()
+            return jsonify({'error': 'Only completed or cancelled sends can be removed'}), 409
+
+        cur.execute('DELETE FROM send_logs WHERE job_id = %s AND user_id = %s', (job_id, user_id))
+        cur.execute('DELETE FROM send_jobs WHERE id = %s AND user_id = %s', (job_id, user_id))
+        conn.commit()
+        cur.close()
+        return jsonify({'success': True, 'message': 'Send history entry removed'})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        put_conn(conn)
+
+
 # GET /api/send/history  — every past bulk-send run for this user, with
 # delivered/read/replied engagement counts alongside the raw sent/failed
 # ones. Not capped — the frontend paginates the full list itself (see
