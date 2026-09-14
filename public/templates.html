@@ -76,6 +76,11 @@
       margin-top: 10px;
     }
     .template-actions .btn { flex: 1 1 0; min-height: 46px; }
+    .website-link-actions { display: flex; justify-content: flex-start; margin-top: 10px; }
+    .website-link-actions .btn { color: var(--g-300); border-color: rgba(37,211,102,0.45); }
+    .website-link-actions .btn:hover { background: rgba(37,211,102,0.12); border-color: var(--g-300); color: var(--text); }
+    .website-link-second { display: none; margin-top: 12px; }
+    .website-link-second.visible { display: block; }
     @media (max-width: 560px) {
       .template-actions { flex-direction: column-reverse; }
       .template-actions .btn { width: 100%; }
@@ -208,14 +213,26 @@
           <input type="text" id="tpl-footer" placeholder="e.g. Reply STOP to unsubscribe" maxlength="60" />
         </div>
 
-        <!-- Keep the optional call-to-action immediately below the footer. -->
+        <!-- Meta supports up to two static URL call-to-action buttons. -->
         <div class="form-group">
-          <label>Visit Website Button <span style="color:var(--text-3);font-weight:400">(optional)</span></label>
+          <label>Visit Website Buttons <span style="color:var(--text-3);font-weight:400">(optional, up to 2)</span></label>
           <div class="row-2">
-            <input type="text" id="tpl-button-text" placeholder="Button text, e.g. Visit Website" maxlength="25" />
-            <input type="url" id="tpl-button-url" placeholder="https://example.com" maxlength="2000" />
+            <input type="text" id="tpl-button-text" placeholder="Button 1 text, e.g. Visit Website" maxlength="25" />
+            <input type="url" id="tpl-button-url" placeholder="Button 1 URL, e.g. https://example.com" maxlength="2000" />
           </div>
-          <p class="hint">Adds one WhatsApp call-to-action button. Enter both a label (up to 25 characters) and a public http:// or https:// URL.</p>
+          <div class="website-link-second" id="website-link-second">
+            <div class="row-2">
+              <input type="text" id="tpl-button-text-2" placeholder="Button 2 text, e.g. View Catalog" maxlength="25" />
+              <input type="url" id="tpl-button-url-2" placeholder="Button 2 URL, e.g. https://example.com" maxlength="2000" />
+            </div>
+          </div>
+          <div class="website-link-actions" id="add-website-link-wrap">
+            <button class="btn btn-outline btn-sm" type="button" onclick="showSecondWebsiteLink()">＋ Add second website link</button>
+          </div>
+          <div class="website-link-actions" id="remove-website-link-wrap" style="display:none">
+            <button class="btn btn-ghost btn-sm" type="button" onclick="hideSecondWebsiteLink()">− Remove second website link</button>
+          </div>
+          <p class="hint">Each link adds a WhatsApp call-to-action button. Enter both a label (up to 25 characters) and a public http:// or https:// URL.</p>
         </div>
 
         <div class="template-actions">
@@ -581,13 +598,20 @@
     const header_type = document.getElementById('tpl-header-type').value;
     const body_text   = document.getElementById('tpl-body').value.trim();
     const footer_text = document.getElementById('tpl-footer').value.trim();
-    const button_text = document.getElementById('tpl-button-text').value.trim();
-    const button_url  = document.getElementById('tpl-button-url').value.trim();
+    const website_buttons = [
+      { text: document.getElementById('tpl-button-text').value.trim(), url: document.getElementById('tpl-button-url').value.trim() },
+      { text: document.getElementById('tpl-button-text-2').value.trim(), url: document.getElementById('tpl-button-url-2').value.trim() },
+    ];
     if (!name)       return showAlert('create-alert', 'error', 'Template name is required');
     if (!body_text)  return showAlert('create-alert', 'error', 'Body text is required');
     if (body_text.length > 1024) return showAlert('create-alert', 'error', 'Body exceeds 1024 chars');
-    if ((button_text && !button_url) || (!button_text && button_url))
-      return showAlert('create-alert', 'error', 'Enter both website button text and URL, or leave both blank');
+    for (let i = 0; i < website_buttons.length; i++) {
+      const link = website_buttons[i];
+      if ((link.text && !link.url) || (!link.text && link.url))
+        return showAlert('create-alert', 'error', `Enter both text and URL for website link ${i + 1}, or leave both blank`);
+      if (link.url && !/^https?:\/\/[^\s/$.?#].[^\s]*$/i.test(link.url))
+        return showAlert('create-alert', 'error', `Website link ${i + 1} must use a public http:// or https:// URL`);
+    }
     const btn = document.getElementById('create-btn');
     btn.disabled = true; btn.textContent = 'Creating...';
     hideAlert('create-alert');
@@ -598,7 +622,7 @@
       }
       const res  = await fetch(`${API}/create`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, category, language, header_type, header_handle: uploadedHandle, body_text, footer_text, button_text, button_url }),
+        body: JSON.stringify({ name, category, language, header_type, header_handle: uploadedHandle, body_text, footer_text, website_buttons }),
       });
       const data = await res.json();
       if (data.success) {
@@ -628,6 +652,7 @@
     document.getElementById('tpl-footer').value   = '';
     document.getElementById('tpl-button-text').value = '';
     document.getElementById('tpl-button-url').value  = '';
+    hideSecondWebsiteLink();
     document.getElementById('tpl-header-type').value = 'NONE';
     document.getElementById('char-count').textContent = '0 / 1024';
     document.getElementById('upload-area').classList.remove('active');
@@ -640,11 +665,29 @@
   }
   function hideAlert(id) { document.getElementById(id).style.display = 'none'; }
 
+  function showSecondWebsiteLink() {
+    document.getElementById('website-link-second').classList.add('visible');
+    document.getElementById('add-website-link-wrap').style.display = 'none';
+    document.getElementById('remove-website-link-wrap').style.display = 'flex';
+    document.getElementById('tpl-button-text-2').focus();
+  }
+
+  function hideSecondWebsiteLink() {
+    document.getElementById('website-link-second').classList.remove('visible');
+    document.getElementById('add-website-link-wrap').style.display = 'flex';
+    document.getElementById('remove-website-link-wrap').style.display = 'none';
+    document.getElementById('tpl-button-text-2').value = '';
+    document.getElementById('tpl-button-url-2').value = '';
+  }
+
   function openPreview() {
     const headerType = document.getElementById('tpl-header-type').value;
     const bodyText   = document.getElementById('tpl-body').value.trim();
     const footerText = document.getElementById('tpl-footer').value.trim();
-    const buttonText = document.getElementById('tpl-button-text').value.trim();
+    const websiteButtons = [
+      document.getElementById('tpl-button-text').value.trim(),
+      document.getElementById('tpl-button-text-2').value.trim(),
+    ].filter(Boolean);
     const fname      = document.getElementById('preview-fname').textContent;
     let headerHtml = '';
     if (headerType === 'IMAGE') {
@@ -671,9 +714,9 @@
     document.getElementById('prev-body').innerHTML     = formattedBody;
     document.getElementById('prev-footer').textContent = footerText;
     document.getElementById('prev-footer').style.display = footerText ? 'block' : 'none';
-    document.getElementById('prev-buttons').innerHTML = buttonText
-      ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(0,0,0,.08);text-align:center;color:#008069;font-weight:600;font-size:13px">${esc(buttonText)} ↗</div>`
-      : '';
+    document.getElementById('prev-buttons').innerHTML = websiteButtons.map((text, index) =>
+      `<div style="${index ? '' : 'margin-top:8px;padding-top:8px;'}border-top:1px solid rgba(0,0,0,.08);padding:8px 0;text-align:center;color:#008069;font-weight:600;font-size:13px">${esc(text)} ↗</div>`
+    ).join('');
     document.getElementById('prev-time').textContent   = timeStr;
     document.getElementById('preview-modal').classList.add('open');
   }
