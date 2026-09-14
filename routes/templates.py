@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify, session, Response
 import requests as http
 from db import get_conn, put_conn
 import secrets
+import json
+from urllib.parse import urlparse
 
 templates_bp = Blueprint('templates', __name__)
 META_API = 'https://graph.facebook.com/v22.0'
@@ -34,6 +36,39 @@ def get_app_id(access_token):
         return res.json().get('data', {}).get('app_id')
     except:
         return None
+
+
+def parse_website_buttons(body):
+    """Validate and normalize up to two static URL CTA buttons.
+
+    `button_text` / `button_url` are accepted as a backwards-compatible
+    fallback for clients that predate the second-link UI.
+    """
+    raw_buttons = body.get('website_buttons')
+    if raw_buttons is None:
+        raw_buttons = [{'text': body.get('button_text', ''), 'url': body.get('button_url', '')}]
+    if not isinstance(raw_buttons, list) or len(raw_buttons) > 2:
+        raise ValueError('You can add up to two website links')
+
+    buttons = []
+    for index, item in enumerate(raw_buttons, start=1):
+        if not isinstance(item, dict):
+            raise ValueError('Each website link must include a button text and URL')
+        text = (item.get('text') or '').strip()
+        url = (item.get('url') or '').strip()
+        if not text and not url:
+            continue
+        if not text or not url:
+            raise ValueError(f'Website link {index} needs both button text and URL')
+        if len(text) > 25:
+            raise ValueError(f'Website link {index} button text must be 25 characters or fewer')
+        parsed = urlparse(url)
+        if parsed.scheme not in ('http', 'https') or not parsed.netloc:
+            raise ValueError(f'Website link {index} must use a public http:// or https:// URL')
+        if len(url) > 2000:
+            raise ValueError(f'Website link {index} URL is too long')
+        buttons.append({'text': text, 'url': url})
+    return buttons
 
 
 # GET /api/templates/list
@@ -153,6 +188,10 @@ def create_template():
 
         if not name or not body_text:
             return jsonify({'error': 'Template name and body text are required'}), 400
+        try:
+            website_buttons = parse_website_buttons(body)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
 
         # Build Meta API payload
         components = []
@@ -168,6 +207,12 @@ def create_template():
 
         if footer_text:
             components.append({'type': 'FOOTER', 'text': footer_text})
+
+        if website_buttons:
+            components.append({
+                'type': 'BUTTONS',
+                'buttons': [{'type': 'URL', 'text': b['text'], 'url': b['url']} for b in website_buttons]
+            })
 
         payload = {
             'name': name,
@@ -195,11 +240,11 @@ def create_template():
             cur = conn.cursor()
             cur.execute("""
                 INSERT INTO whatsapp_templates
-                    (user_id, name, category, language, header_type, body_text, footer_text, status, meta_template_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    (user_id, name, category, language, header_type, body_text, footer_text, website_buttons, status, meta_template_id)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (
                 user_id, name, category, language, header_type,
-                body_text, footer_text or None,
+                body_text, footer_text or None, json.dumps(website_buttons),
                 data.get('status', 'PENDING'), data.get('id')
             ))
             conn.commit()
@@ -237,6 +282,7 @@ def edit_template():
         body_text   = (body.get('body_text') or '').strip()
         footer_text = (body.get('footer_text') or '').strip()
         header_component = body.get('header_component')  # unchanged pass-through, or None
+        buttons_component = body.get('buttons_component')  # unchanged pass-through, or None
 
         if not template_id or not body_text:
             return jsonify({'error': 'Template id and body text are required'}), 400
@@ -249,6 +295,8 @@ def edit_template():
         components.append({'type': 'BODY', 'text': body_text})
         if footer_text:
             components.append({'type': 'FOOTER', 'text': footer_text})
+        if buttons_component:
+            components.append(buttons_component)
 
         res = http.post(
             f"{META_API}/{template_id}",

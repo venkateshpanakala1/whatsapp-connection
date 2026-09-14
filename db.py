@@ -67,6 +67,7 @@ def init_db():
                 header_type VARCHAR(20) DEFAULT 'NONE',
                 body_text TEXT NOT NULL,
                 footer_text VARCHAR(200),
+                website_buttons JSONB DEFAULT '[]'::jsonb,
                 status VARCHAR(20) DEFAULT 'PENDING',
                 meta_template_id VARCHAR(100),
                 created_at TIMESTAMP DEFAULT NOW()
@@ -165,6 +166,10 @@ def init_db():
         # appear unread; new incoming rows explicitly set FALSE at insert time.
         cur.execute("ALTER TABLE replies ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT TRUE;")
         cur.execute("ALTER TABLE template_media ADD COLUMN IF NOT EXISTS filename VARCHAR(255);")
+        # A template can have up to two Meta URL call-to-action buttons. Keep
+        # their label/URL pairs locally too, rather than relying solely on a
+        # later Graph API read to reconstruct the template definition.
+        cur.execute("ALTER TABLE whatsapp_templates ADD COLUMN IF NOT EXISTS website_buttons JSONB DEFAULT '[]'::jsonb;")
         # Migrations: add source_file + user_id to all tables
         cur.execute("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS source_file VARCHAR(255);")
         cur.execute("ALTER TABLE whatsapp_connections ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")
