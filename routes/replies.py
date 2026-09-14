@@ -380,6 +380,54 @@ def get_conversation(phone):
 # GET /api/replies/media/<reply_id>  — serves the downloaded WhatsApp media
 # (image/video/audio/document) for one message. Scoped to the logged-in
 # user's own replies so one account can't fetch another's media by guessing ids.
+# DELETE /api/replies/messages
+# Deletes selected local chat messages for the signed-in tenant, irrespective
+# of direction (incoming or outgoing), plus any media stored for those rows.
+# WhatsApp/Meta is not contacted: it only changes this app's database.
+@replies_bp.route('/messages', methods=['DELETE'])
+def delete_messages():
+    user_id = session.get('user_id')
+    body = request.get_json(silent=True) or {}
+    raw_ids = body.get('ids') or []
+    if not user_id:
+        return jsonify({'error': 'Not logged in'}), 401
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return jsonify({'error': 'Select at least one message to delete'}), 400
+
+    try:
+        reply_ids = sorted({int(reply_id) for reply_id in raw_ids})
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Invalid message selection'}), 400
+    if len(reply_ids) > 100:
+        return jsonify({'error': 'You can delete up to 100 messages at once'}), 400
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        # reply_media references replies without ON DELETE CASCADE, so remove
+        # media first. Both queries are tenant-scoped to prevent guessed IDs
+        # from affecting another account's conversations.
+        cur.execute("""
+            DELETE FROM reply_media
+            WHERE reply_id IN (
+                SELECT id FROM replies WHERE user_id = %s AND id = ANY(%s)
+            )
+        """, (user_id, reply_ids))
+        cur.execute(
+            'DELETE FROM replies WHERE user_id = %s AND id = ANY(%s)',
+            (user_id, reply_ids)
+        )
+        deleted = cur.rowcount
+        conn.commit()
+        cur.close()
+        return jsonify({'success': True, 'deleted': deleted})
+    except Exception as e:
+        conn.rollback()
+        return jsonify({'error': str(e)}), 500
+    finally:
+        put_conn(conn)
+
+
 @replies_bp.route('/media/<int:reply_id>', methods=['GET'])
 def reply_media(reply_id):
     user_id = session.get('user_id')
