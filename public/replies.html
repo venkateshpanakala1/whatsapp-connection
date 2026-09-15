@@ -1214,12 +1214,12 @@
     if (ringingCallId && ringingCallId !== call.call_id) stopIncomingCallTone();
     document.getElementById('incoming-call-title').textContent = call.name || call.phone || 'Incoming WhatsApp call';
     document.getElementById('incoming-call-info').textContent = text || 'Incoming WhatsApp voice call';
-    if (!callPeer && !document.hidden) startIncomingCallTone();
+    if (!callPeer) startIncomingCallTone();
   }
 
   function startIncomingCallTone() {
     const callId = activeIncomingCall?.call_id;
-    if (!callId || document.hidden || ringingCallId === callId) return;
+    if (!callId || ringingCallId === callId) return;
     const ringtone = document.getElementById('incoming-call-ringtone');
     stopIncomingCallTone();
     ringingCallId = callId;
@@ -1256,7 +1256,7 @@
       ringtone.currentTime = 0;
       ringtone.volume = configuredVolume;
       button.style.display = 'none';
-      if (activeIncomingCall && !callPeer && !document.hidden) {
+      if (activeIncomingCall && !callPeer) {
         ringingCallId = null;
         startIncomingCallTone();
       }
@@ -1358,8 +1358,13 @@
 
   window.addEventListener('push-new-call', () => loadIncomingCalls());
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stopIncomingCallTone();
-    else if (activeIncomingCall && !callPeer) startIncomingCallTone();
+    // Keep an enabled ringtone running in an already-open background tab.
+    // If a browser paused it while backgrounded, resume it on return.
+    if (!document.hidden && activeIncomingCall && !callPeer) {
+      const ringtone = document.getElementById('incoming-call-ringtone');
+      if (ringtone.paused) ringingCallId = null;
+      startIncomingCallTone();
+    }
   });
   window.addEventListener('pagehide', stopIncomingCallTone);
 
