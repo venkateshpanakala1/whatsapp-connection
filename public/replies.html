@@ -108,9 +108,6 @@
     .thread-name { font-size: 14.5px; font-weight: 700; color: var(--text); }
     .thread-phone { font-size: 12px; color: var(--text-3); margin-top: 1px; }
     .thread-contact { min-width:0; flex:1; }
-    .thread-call-btn { margin-left:auto; width:38px; height:38px; border:1px solid rgba(37,211,102,.45); border-radius:50%; background:rgba(37,211,102,.12); color:#53e38a; cursor:pointer; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
-    .thread-call-btn:hover { background:rgba(37,211,102,.22); }.thread-call-btn:disabled { opacity:.55; cursor:wait; }
-    .thread-call-btn.calling { width:auto; border-radius:20px; padding:0 12px; font-size:12px; font-weight:700; }
 
     /* ── WhatsApp-style message multi-select (long-press a bubble → select
        whole message, tap others to add, Copy copies all as text) ── */
@@ -396,7 +393,6 @@
             <div class="thread-name" id="thread-name"></div>
             <div class="thread-phone" id="thread-phone"></div>
           </div>
-          <button class="thread-call-btn" id="outgoing-call-btn" type="button" onclick="startOutboundCall()" title="Call customer" aria-label="Call customer">☎</button>
         </div>
         <div class="thread-messages" id="thread-messages"></div>
         <div class="thread-input" id="thread-input">
@@ -433,8 +429,6 @@
   let pendingReplies = [];        // [{ cr_id, text, status }]
   let crStreams      = new Map(); // cr_id -> setInterval timer id
   let activeIncomingCall = null;
-  let activeOutgoingCall = null;
-  let outboundAnswerApplied = false;
   let callPeer = null;
   let ringingCallId = null;
   const CALL_RINGTONE_VOLUME = 0.78;
@@ -1208,7 +1202,7 @@
 
   setInterval(loadConversations, 20000);
   // Keep terminal call state responsive without changing message polling.
-  setInterval(() => { loadIncomingCalls(); loadOutgoingCall(); }, 1000);
+  setInterval(loadIncomingCalls, 1000);
   loadSidebarStatus();
   loadConversations();
   loadIncomingCalls();
@@ -1277,14 +1271,12 @@
   }
 
   async function loadIncomingCalls() {
-    // An outbound peer owns the shared WebRTC object until it ends.
-    if (activeOutgoingCall) return;
     try {
       const res = await fetch('/api/calls/incoming', { credentials: 'same-origin', headers: {'X-Call-Agent-ID': callAgentId} });
       const data = await res.json();
       const current = data.calls?.find((call) => call.call_id === activeIncomingCall?.call_id);
       if (data.enabled && data.calls?.length) setCallUi(current || data.calls[0]);
-      else if (!activeOutgoingCall) cleanupCallUi();
+      else cleanupCallUi();
     } catch (e) { /* Call UI must never affect chat polling. */ }
   }
 
@@ -1296,89 +1288,6 @@
       function check() { if (pc.iceGatheringState === 'complete') done(); }
       pc.addEventListener('icegatheringstatechange', check);
     });
-  }
-
-  function setOutboundCallButton(state = 'ready') {
-    const btn = document.getElementById('outgoing-call-btn');
-    if (state === 'ready') { btn.disabled = false; btn.classList.remove('calling'); btn.textContent = '☎'; btn.title = 'Call customer'; return; }
-    btn.disabled = true; btn.classList.add('calling');
-    btn.textContent = state === 'connected' ? 'End call' : state === 'ringing' ? 'Ringing…' : 'Calling…';
-    btn.title = btn.textContent;
-    if (state === 'connected') { btn.disabled = false; btn.onclick = endOutboundCall; }
-  }
-
-  async function startOutboundCall() {
-    if (!currentPhone || activeIncomingCall || activeOutgoingCall || callPeer) return;
-    setOutboundCallButton('calling');
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
-      callPeer = new RTCPeerConnection();
-      callPeer.ontrack = (event) => { document.getElementById('call-remote-audio').srcObject = event.streams[0]; };
-      callPeer.onconnectionstatechange = () => {
-        if (callPeer?.connectionState === 'connected') setOutboundCallButton('connected');
-        if (['failed', 'closed', 'disconnected'].includes(callPeer?.connectionState)) cleanupOutboundCall();
-      };
-      stream.getTracks().forEach(track => callPeer.addTrack(track, stream));
-      await callPeer.setLocalDescription(await callPeer.createOffer());
-      await waitForIceComplete(callPeer);
-      const res = await fetch('/api/calls/outgoing', { method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json','X-Call-Agent-ID':callAgentId}, body:JSON.stringify({phone:currentPhone, sdp:callPeer.localDescription.sdp}) });
-      const data = await res.json();
-      if (!res.ok) {
-        if (data.can_request_permission && confirm(`${data.error}\n\nSend a WhatsApp call-permission request now?`)) {
-          await requestCallPermission();
-          cleanupOutboundCall();
-          return;
-        }
-        throw new Error(data.error || 'Could not start call');
-      }
-      activeOutgoingCall = {call_id:data.call_id, phone:currentPhone, status:data.status};
-      outboundAnswerApplied = false;
-    } catch (e) {
-      cleanupOutboundCall();
-      alert(e.message);
-    }
-  }
-
-  async function requestCallPermission() {
-    const res = await fetch('/api/calls/outgoing/permission-request', {
-      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json','X-Call-Agent-ID':callAgentId},
-      body:JSON.stringify({phone:currentPhone})
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Could not request call permission');
-    alert(data.message);
-  }
-
-  async function loadOutgoingCall() {
-    if (!activeOutgoingCall) return;
-    try {
-      const res = await fetch('/api/calls/outgoing', {credentials:'same-origin', headers:{'X-Call-Agent-ID':callAgentId}});
-      const data = await res.json(), call = data.call;
-      if (!call || call.call_id !== activeOutgoingCall.call_id) return cleanupOutboundCall();
-      activeOutgoingCall = call;
-      if (['REJECTED','FAILED','TERMINATED','COMPLETED','EXPIRED','BUSY','NO_ANSWER'].includes(call.status)) return cleanupOutboundCall();
-      if (call.answer_sdp && !outboundAnswerApplied && callPeer) {
-        await callPeer.setRemoteDescription({type:'answer', sdp:call.answer_sdp});
-        outboundAnswerApplied = true;
-      }
-      if (call.status === 'RINGING') setOutboundCallButton('ringing');
-    } catch (e) {}
-  }
-
-  async function endOutboundCall() {
-    if (!activeOutgoingCall) return;
-    setOutboundCallButton('calling');
-    try {
-      await fetch(`/api/calls/${encodeURIComponent(activeOutgoingCall.call_id)}/action`, {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json','X-Call-Agent-ID':callAgentId}, body:JSON.stringify({action:'terminate'})});
-    } finally { cleanupOutboundCall(); }
-  }
-
-  function cleanupOutboundCall() {
-    activeOutgoingCall = null; outboundAnswerApplied = false;
-    if (callPeer) { callPeer.getSenders().forEach(s => s.track?.stop()); callPeer.close(); callPeer = null; }
-    const btn = document.getElementById('outgoing-call-btn');
-    btn.onclick = startOutboundCall;
-    setOutboundCallButton('ready');
   }
 
   async function callApi(action, sdp = '') {
