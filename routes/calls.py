@@ -6,6 +6,7 @@ is not used as an RTP/SIP server.
 """
 import os
 import threading
+import re
 from urllib.parse import quote
 
 import requests as http
@@ -53,7 +54,8 @@ def save_call_event(user_id, phone_number_id, call, profile_names=None):
     if event == 'terminate':
         status = 'TERMINATED'
     direction = (call.get('direction') or '').upper()
-    caller = (call.get('from') or call.get('caller') or '').strip()
+    # For outbound calls the customer is the callee, not the business number.
+    caller = (call.get('to') if direction == 'BUSINESS_INITIATED' else (call.get('from') or call.get('caller') or '')).strip()
     session_data = call.get('session') or {}
     offer = session_data.get('sdp') if event == 'connect' and session_data.get('sdp_type') == 'offer' else None
     answer = session_data.get('sdp') if event == 'connect' and session_data.get('sdp_type') == 'answer' else None
@@ -145,6 +147,168 @@ def incoming_calls():
         return jsonify(response)
     finally:
         put_conn(conn)
+
+
+def can_start_call(permission):
+    actions = permission.get('actions') or []
+    return permission.get('status') == 'granted' and any(
+        action.get('action_name') == 'start_call' and action.get('can_perform_action')
+        for action in actions
+    )
+
+
+def permission_action(permission, name):
+    return any(action.get('action_name') == name and action.get('can_perform_action')
+               for action in (permission.get('actions') or []))
+
+
+def save_call_permission(user_id, phone_number_id, customer_phone, reply, context_id=''):
+    """Persist Meta's interactive call_permission_reply webhook."""
+    if not user_id or not customer_phone:
+        return
+    response = (reply.get('response') or '').lower()
+    status = 'granted' if response == 'accept' else ('denied' if response == 'reject' else 'pending')
+    expires = reply.get('expiration_timestamp')
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""INSERT INTO whatsapp_call_permissions
+                       (user_id,phone_number_id,customer_phone,status,response_source,is_permanent,expires_at,context_id,updated_at)
+                       VALUES (%s,%s,%s,%s,%s,%s,CASE WHEN %s IS NULL THEN NULL ELSE to_timestamp(%s) END,%s,NOW())
+                       ON CONFLICT (user_id,phone_number_id,customer_phone) DO UPDATE SET
+                         status=EXCLUDED.status,response_source=EXCLUDED.response_source,is_permanent=EXCLUDED.is_permanent,
+                         expires_at=EXCLUDED.expires_at,context_id=EXCLUDED.context_id,updated_at=NOW()""",
+                    (user_id, phone_number_id, customer_phone, status, reply.get('response_source') or '',
+                     bool(reply.get('is_permanent')), expires, expires, context_id))
+        conn.commit(); cur.close()
+        print(f'[calls] permission update customer={customer_phone} status={status} source={reply.get("response_source", "")} permanent={bool(reply.get("is_permanent"))}')
+    except Exception as e:
+        conn.rollback(); print(f'[calls] permission save failed: {e}')
+    finally:
+        put_conn(conn)
+
+
+@calls_bp.route('/outgoing', methods=['GET', 'POST'])
+def outgoing_call():
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Not logged in'}), 401
+    if not CALLING_ENABLED:
+        return jsonify({'error': 'WhatsApp Calling is disabled'}), 403
+    agent_id = agent_id_from_request()
+    if not agent_id:
+        return jsonify({'error': 'Refresh Replies and try again.'}), 400
+    creds = get_wa_credentials(user_id)
+    if not creds or (CALLING_PHONE_NUMBER_ID and creds['phone_number_id'] != CALLING_PHONE_NUMBER_ID):
+        return jsonify({'error': 'Calling is not enabled for this WhatsApp number'}), 403
+
+    if request.method == 'GET':
+        conn = get_conn()
+        try:
+            cur = conn.cursor(); expire_stale_calls(cur, user_id)
+            cur.execute("""SELECT call_id, caller_phone, status, answer_sdp
+                           FROM whatsapp_calls WHERE user_id=%s AND direction='BUSINESS_INITIATED'
+                             AND claimed_by=%s AND status NOT IN ('COMPLETED','FAILED','REJECTED','TERMINATED','EXPIRED')
+                           ORDER BY updated_at DESC LIMIT 1""", (user_id, agent_id))
+            row = cur.fetchone(); conn.commit(); cur.close()
+            return jsonify({'call': {'call_id': row[0], 'phone': row[1], 'status': row[2], 'answer_sdp': row[3] or ''} if row else None})
+        finally:
+            put_conn(conn)
+
+    body = request.get_json(silent=True) or {}
+    phone = re.sub(r'\D', '', str(body.get('phone') or ''))
+    sdp = body.get('sdp') or ''
+    if not re.fullmatch(r'\d{7,15}', phone) or not isinstance(sdp, str) or not sdp.startswith('v=0'):
+        return jsonify({'error': 'Invalid customer phone number or WebRTC offer'}), 400
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        expire_stale_calls(cur, user_id)
+        cur.execute('SELECT 1 FROM replies WHERE user_id=%s AND from_phone=%s LIMIT 1', (user_id, phone))
+        known_customer = cur.fetchone()
+        cur.execute("""SELECT 1 FROM whatsapp_calls WHERE user_id=%s
+                       AND status NOT IN ('COMPLETED','FAILED','REJECTED','TERMINATED','EXPIRED') LIMIT 1""", (user_id,))
+        active_call = cur.fetchone(); conn.commit(); cur.close()
+        if not known_customer:
+            return jsonify({'error': 'This customer is not available in your conversations.'}), 404
+        if active_call:
+            return jsonify({'error': 'Another WhatsApp call is already active.'}), 409
+    finally:
+        put_conn(conn)
+
+    try:
+        permission_res = http.get(f"{META_API}/{creds['phone_number_id']}/call_permissions",
+                                  params={'user_wa_id': phone}, headers={'Authorization': f"Bearer {creds['access_token']}"}, timeout=15)
+        permission_data = permission_res.json()
+        permission = permission_data.get('permission') or {}
+        meta_error = permission_data.get('error') or {}
+        print(f'[calls] permission check customer={phone} http={permission_res.status_code} status={permission.get("status", "")} actions={permission.get("actions", [])} meta_code={meta_error.get("code", "")}')
+        if permission_res.status_code >= 400:
+            return jsonify({'error': meta_error.get('message', 'Meta could not check calling permission.'), 'permission_error': True}), 502
+        if not can_start_call(permission):
+            status = permission.get('status') or 'no_permission'
+            return jsonify({'error': 'This customer has not granted calling permission yet.', 'eligible': False,
+                            'permission_status': status, 'can_request_permission': permission_action(permission, 'send_call_permission_request')}), 409
+        res = http.post(f"{META_API}/{creds['phone_number_id']}/calls", headers={
+            'Authorization': f"Bearer {creds['access_token']}", 'Content-Type': 'application/json'}, json={
+            'messaging_product': 'whatsapp', 'to': phone, 'action': 'connect',
+            'session': {'sdp_type': 'offer', 'sdp': sdp},
+            'biz_opaque_callback_data': f'agent:{agent_id}',
+        }, timeout=15)
+        data = res.json()
+        call_id = ((data.get('calls') or [{}])[0].get('id') or '').strip()
+        if res.status_code >= 400 or data.get('error') or not call_id:
+            return jsonify({'error': data.get('error', {}).get('message', 'Meta could not start this call')}), 400
+    except Exception as e:
+        return jsonify({'error': f'Calling API request failed: {e}'}), 502
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""INSERT INTO whatsapp_calls (call_id,user_id,phone_number_id,caller_phone,direction,event,status,offer_sdp,claimed_by,claimed_at,started_at)
+                       VALUES (%s,%s,%s,%s,'BUSINESS_INITIATED','connect','CALLING',%s,%s,NOW(),NOW())""",
+                    (call_id, user_id, creds['phone_number_id'], phone, sdp, agent_id))
+        conn.commit(); cur.close()
+    finally:
+        put_conn(conn)
+    return jsonify({'success': True, 'call_id': call_id, 'status': 'CALLING'})
+
+
+@calls_bp.route('/outgoing/permission-request', methods=['POST'])
+def request_outgoing_call_permission():
+    user_id = session.get('user_id')
+    if not user_id or not CALLING_ENABLED:
+        return jsonify({'error': 'WhatsApp Calling is unavailable'}), 403
+    creds = get_wa_credentials(user_id)
+    body = request.get_json(silent=True) or {}
+    phone = re.sub(r'\D', '', str(body.get('phone') or ''))
+    if not creds or not re.fullmatch(r'\d{7,15}', phone):
+        return jsonify({'error': 'Invalid customer or WhatsApp connection'}), 400
+    try:
+        check = http.get(f"{META_API}/{creds['phone_number_id']}/call_permissions", params={'user_wa_id': phone},
+                         headers={'Authorization': f"Bearer {creds['access_token']}"}, timeout=15)
+        check_data = check.json(); permission = check_data.get('permission') or {}
+        if check.status_code >= 400 or not permission_action(permission, 'send_call_permission_request'):
+            error = (check_data.get('error') or {}).get('message') or 'Meta does not allow a permission request for this customer now.'
+            print(f'[calls] permission request blocked customer={phone} http={check.status_code} status={permission.get("status", "")}')
+            return jsonify({'error': error, 'permission_status': permission.get('status', 'unknown')}), 409
+        res = http.post(f"{META_API}/{creds['phone_number_id']}/messages", headers={
+            'Authorization': f"Bearer {creds['access_token']}", 'Content-Type': 'application/json'}, json={
+            'messaging_product': 'whatsapp', 'recipient_type': 'individual', 'to': phone, 'type': 'interactive',
+            'interactive': {'type': 'call_permission_request',
+                            'body': {'text': 'Please allow calls so we can assist you.'},
+                            'action': {'name': 'call_permission_request'}}}, timeout=15)
+        data = res.json()
+        if res.status_code >= 400 or data.get('error'):
+            detail = (data.get('error') or {}).get('message', 'Meta could not send the permission request.')
+            print(f'[calls] permission request failed customer={phone} http={res.status_code} code={(data.get("error") or {}).get("code", "")}')
+            return jsonify({'error': detail}), 400
+        print(f'[calls] permission request sent customer={phone}')
+        return jsonify({'success': True, 'message': 'Call permission request sent. The customer must approve it before you can call.'})
+    except Exception as e:
+        print(f'[calls] permission request exception customer={phone}: {e}')
+        return jsonify({'error': f'Calling permission request failed: {e}'}), 502
 
 
 @calls_bp.route('/<call_id>/action', methods=['POST'])
