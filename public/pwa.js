@@ -73,20 +73,6 @@ async function installApp() {
   }
 }
 
-// The native Android APK is a normal download, separate from the existing
-// PWA shortcut installer. Railway serves it from public/downloads/V7.apk
-// after the Android project has been built and the artifact is deployed.
-async function downloadAndroidApk() {
-  const apkUrl = '/downloads/V7.apk';
-  try {
-    const response = await fetch(apkUrl, { method: 'HEAD', cache: 'no-store' });
-    if (!response.ok) throw new Error('not built');
-    window.location.assign(apkUrl);
-  } catch (_) {
-    alert('The Android APK is not uploaded yet. Build android/app/build/outputs/apk/debug/app-debug.apk, rename it to V7.apk, then deploy it as public/downloads/V7.apk.');
-  }
-}
-
 if ('serviceWorker' in navigator) {
   // Whether this page load was already controlled by a service worker before
   // registration even runs — false only on the very first install (e.g. right
@@ -171,9 +157,6 @@ async function enablePush() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  document.querySelectorAll('.js-install-app').forEach((btn) => {
-    btn.textContent = 'Install Web Shortcut';
-  });
   if (isStandalone()) {
     hideInstallButton(); // already installed/running as an app — nothing to install
     return;
