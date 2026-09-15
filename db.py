@@ -197,6 +197,13 @@ def init_db():
         # Defaults existing rows to read so old history doesn't suddenly
         # appear unread; new incoming rows explicitly set FALSE at insert time.
         cur.execute("ALTER TABLE replies ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT TRUE;")
+        # Normalize early Calling API action labels written by pre-release
+        # builds, so stale rejected/ended calls never keep ringing in Replies.
+        cur.execute("""UPDATE whatsapp_calls SET status = CASE status
+            WHEN 'REJECT' THEN 'REJECTED'
+            WHEN 'TERMINATE' THEN 'TERMINATED'
+            ELSE status END
+        WHERE status IN ('REJECT', 'TERMINATE')""")
         cur.execute("ALTER TABLE template_media ADD COLUMN IF NOT EXISTS filename VARCHAR(255);")
         # A template can have up to two Meta URL call-to-action buttons. Keep
         # their label/URL pairs locally too, rather than relying solely on a
