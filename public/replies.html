@@ -23,6 +23,18 @@
       transition: all var(--t);
     }
     .btn-notify:hover { background: #fef08a; }
+    .incoming-call {
+      display:none; position:fixed; z-index:1001; right:22px; bottom:22px;
+      width:min(360px, calc(100vw - 44px)); background:#10213f; color:#fff;
+      border:1px solid rgba(37,211,102,.6); border-radius:14px; padding:18px;
+      box-shadow:0 12px 36px rgba(0,0,0,.38);
+    }
+    .incoming-call.show { display:block; }
+    .incoming-call h3 { margin:0 0 6px; font-size:17px; }
+    .incoming-call p { margin:0 0 15px; color:#cbd5e1; font-size:13px; }
+    .call-actions { display:flex; gap:9px; }
+    .call-actions button { border:0; border-radius:8px; padding:9px 14px; cursor:pointer; font:600 13px Inter,sans-serif; }
+    .call-accept { background:#22c55e; color:#062b18; }.call-reject,.call-end { background:#ef4444;color:#fff; }
 
     /* ── Two-pane chat layout ── */
     .chat-layout {
@@ -383,6 +395,16 @@
     </div>
   </div>
 </div>
+<div class="incoming-call" id="incoming-call" aria-live="assertive">
+  <h3 id="incoming-call-title">Incoming WhatsApp call</h3>
+  <p id="incoming-call-info">Connecting an agent…</p>
+  <div class="call-actions">
+    <button class="call-accept" id="call-accept" onclick="acceptIncomingCall()">Accept</button>
+    <button class="call-reject" id="call-reject" onclick="rejectIncomingCall()">Reject</button>
+    <button class="call-end" id="call-end" onclick="endIncomingCall()" style="display:none">End call</button>
+  </div>
+</div>
+<audio id="call-remote-audio" autoplay></audio>
 
 <script>
   const API = '/api/replies';
@@ -395,6 +417,8 @@
   // can be sent back-to-back without one affecting another.
   let pendingReplies = [];        // [{ cr_id, text, status }]
   let crStreams      = new Map(); // cr_id -> setInterval timer id
+  let activeIncomingCall = null;
+  let callPeer = null;
 
   async function loadSidebarStatus() {
     try {
@@ -1150,8 +1174,96 @@
   threadMessagesEl.addEventListener('click', onBubbleClickCapture, true);
 
   setInterval(loadConversations, 20000);
+  setInterval(loadIncomingCalls, 3000);
   loadSidebarStatus();
   loadConversations();
+  loadIncomingCalls();
+
+  function setCallUi(call, text) {
+    activeIncomingCall = call || null;
+    const box = document.getElementById('incoming-call');
+    box.classList.toggle('show', !!call);
+    if (!call) return;
+    document.getElementById('incoming-call-title').textContent = call.name || call.phone || 'Incoming WhatsApp call';
+    document.getElementById('incoming-call-info').textContent = text || 'Incoming WhatsApp voice call';
+  }
+
+  async function loadIncomingCalls() {
+    if (activeIncomingCall && callPeer) return;
+    try {
+      const res = await fetch('/api/calls/incoming', { credentials: 'same-origin' });
+      const data = await res.json();
+      if (data.enabled && data.calls?.length) setCallUi(data.calls[0]);
+      else if (!callPeer) setCallUi(null);
+    } catch (e) { /* Call UI must never affect chat polling. */ }
+  }
+
+  function waitForIceComplete(pc) {
+    return new Promise((resolve) => {
+      if (pc.iceGatheringState === 'complete') return resolve();
+      const timer = setTimeout(done, 4000);
+      function done() { clearTimeout(timer); pc.removeEventListener('icegatheringstatechange', check); resolve(); }
+      function check() { if (pc.iceGatheringState === 'complete') done(); }
+      pc.addEventListener('icegatheringstatechange', check);
+    });
+  }
+
+  async function callApi(action, sdp = '') {
+    const res = await fetch(`/api/calls/${encodeURIComponent(activeIncomingCall.call_id)}/action`, {
+      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action, sdp})
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Call action failed');
+    return data;
+  }
+
+  async function acceptIncomingCall() {
+    if (!activeIncomingCall?.offer_sdp) return;
+    const accept = document.getElementById('call-accept');
+    accept.disabled = true;
+    try {
+      setCallUi(activeIncomingCall, 'Requesting microphone and creating secure media connection…');
+      callPeer = new RTCPeerConnection();
+      callPeer.ontrack = (event) => { document.getElementById('call-remote-audio').srcObject = event.streams[0]; };
+      callPeer.onconnectionstatechange = async () => {
+        if (callPeer?.connectionState === 'connected') {
+          document.getElementById('call-end').style.display = 'inline-block';
+          document.getElementById('call-reject').style.display = 'none';
+          setCallUi(activeIncomingCall, 'Call connected');
+          try { await callApi('accept', callPeer.localDescription.sdp); } catch (e) { setCallUi(activeIncomingCall, e.message); }
+        }
+      };
+      const stream = await navigator.mediaDevices.getUserMedia({audio:true, video:false});
+      stream.getTracks().forEach(track => callPeer.addTrack(track, stream));
+      await callPeer.setRemoteDescription({type:'offer', sdp:activeIncomingCall.offer_sdp});
+      await callPeer.setLocalDescription(await callPeer.createAnswer());
+      await waitForIceComplete(callPeer);
+      await callApi('pre_accept', callPeer.localDescription.sdp);
+      setCallUi(activeIncomingCall, 'Connecting secure audio…');
+    } catch (e) {
+      setCallUi(activeIncomingCall, `Could not accept: ${e.message}`);
+      accept.disabled = false;
+      if (callPeer) { callPeer.close(); callPeer = null; }
+    }
+  }
+
+  async function rejectIncomingCall() {
+    if (!activeIncomingCall) return;
+    try { await callApi('reject'); } catch (e) { alert(e.message); return; }
+    cleanupCallUi();
+  }
+  async function endIncomingCall() {
+    if (!activeIncomingCall) return;
+    try { await callApi('terminate'); } catch (e) { alert(e.message); return; }
+    cleanupCallUi();
+  }
+  function cleanupCallUi() {
+    if (callPeer) { callPeer.getSenders().forEach(s => s.track?.stop()); callPeer.close(); callPeer = null; }
+    document.getElementById('call-accept').disabled = false;
+    document.getElementById('call-reject').style.display = 'inline-block';
+    document.getElementById('call-end').style.display = 'none';
+    setCallUi(null);
+  }
 
   if (typeof Notification !== 'undefined' && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
     document.getElementById('notify-btn').style.display = 'inline-flex';
