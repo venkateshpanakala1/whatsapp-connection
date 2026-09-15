@@ -420,6 +420,16 @@
   let activeIncomingCall = null;
   let callPeer = null;
   let callToneTimer = null;
+  // Identifies this browser agent for the server's atomic call claim.
+  const callAgentId = (() => {
+    const key = 'whatsapp-call-agent-id';
+    let id = localStorage.getItem(key);
+    if (!id) {
+      id = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+      localStorage.setItem(key, id);
+    }
+    return id;
+  })();
 
   async function loadSidebarStatus() {
     try {
@@ -1187,17 +1197,17 @@
     if (!call) { stopIncomingCallTone(); return; }
     document.getElementById('incoming-call-title').textContent = call.name || call.phone || 'Incoming WhatsApp call';
     document.getElementById('incoming-call-info').textContent = text || 'Incoming WhatsApp voice call';
-    if (!callPeer) startIncomingCallTone();
+    if (!callPeer && !document.hidden) startIncomingCallTone();
   }
 
   function startIncomingCallTone() {
-    if (callToneTimer) return;
+    if (callToneTimer || document.hidden) return;
     // Browsers may block audible playback until the agent has interacted with
     // the app. The background case is covered by the OS push sound instead.
     const ring = () => {
+      const ctx = ensureAudioCtx();
+      if (!ctx || ctx.state !== 'running') return;
       try {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        const ctx = new Ctx();
         [440, 480].forEach((frequency, index) => {
           const osc = ctx.createOscillator(), gain = ctx.createGain();
           osc.frequency.value = frequency; gain.gain.setValueAtTime(.0001, ctx.currentTime);
@@ -1205,7 +1215,6 @@
           gain.gain.exponentialRampToValueAtTime(.0001, ctx.currentTime + .45);
           osc.connect(gain).connect(ctx.destination); osc.start(ctx.currentTime + index * .08); osc.stop(ctx.currentTime + .5);
         });
-        setTimeout(() => ctx.close(), 700);
       } catch (e) {}
     };
     ring(); callToneTimer = setInterval(ring, 1800);
@@ -1215,12 +1224,12 @@
   }
 
   async function loadIncomingCalls() {
-    if (activeIncomingCall && callPeer) return;
     try {
-      const res = await fetch('/api/calls/incoming', { credentials: 'same-origin' });
+      const res = await fetch('/api/calls/incoming', { credentials: 'same-origin', headers: {'X-Call-Agent-ID': callAgentId} });
       const data = await res.json();
-      if (data.enabled && data.calls?.length) setCallUi(data.calls[0]);
-      else if (!callPeer) setCallUi(null);
+      const current = data.calls?.find((call) => call.call_id === activeIncomingCall?.call_id);
+      if (data.enabled && data.calls?.length) setCallUi(current || data.calls[0]);
+      else cleanupCallUi();
     } catch (e) { /* Call UI must never affect chat polling. */ }
   }
 
@@ -1236,7 +1245,7 @@
 
   async function callApi(action, sdp = '') {
     const res = await fetch(`/api/calls/${encodeURIComponent(activeIncomingCall.call_id)}/action`, {
-      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action, sdp})
+      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json', 'X-Call-Agent-ID': callAgentId}, body:JSON.stringify({action, sdp})
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Call action failed');
@@ -1247,7 +1256,11 @@
     if (!activeIncomingCall?.offer_sdp) return;
     const accept = document.getElementById('call-accept');
     accept.disabled = true;
+    let claimed = false;
     try {
+      // The first agent to claim wins before any microphone/WebRTC work starts.
+      await callApi('claim');
+      claimed = true;
       setCallUi(activeIncomingCall, 'Requesting microphone and creating secure media connection…');
       callPeer = new RTCPeerConnection();
       callPeer.ontrack = (event) => { document.getElementById('call-remote-audio').srcObject = event.streams[0]; };
@@ -1271,16 +1284,19 @@
       setCallUi(activeIncomingCall, `Could not accept: ${e.message}`);
       accept.disabled = false;
       if (callPeer) { callPeer.close(); callPeer = null; }
+      if (claimed) { try { await callApi('release'); } catch (_) {} }
     }
   }
 
   async function rejectIncomingCall() {
     if (!activeIncomingCall) return;
+    stopIncomingCallTone();
     try { await callApi('reject'); } catch (e) { alert(e.message); return; }
     cleanupCallUi();
   }
   async function endIncomingCall() {
     if (!activeIncomingCall) return;
+    stopIncomingCallTone();
     try { await callApi('terminate'); } catch (e) { alert(e.message); return; }
     cleanupCallUi();
   }
@@ -1294,6 +1310,10 @@
   }
 
   window.addEventListener('push-new-call', () => loadIncomingCalls());
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopIncomingCallTone();
+    else if (activeIncomingCall && !callPeer) startIncomingCallTone();
+  });
 
   if (typeof Notification !== 'undefined' && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
     document.getElementById('notify-btn').style.display = 'inline-flex';
