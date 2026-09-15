@@ -6,7 +6,6 @@ is not used as an RTP/SIP server.
 """
 import os
 import threading
-import re
 from urllib.parse import quote
 
 import requests as http
@@ -53,12 +52,9 @@ def save_call_event(user_id, phone_number_id, call, profile_names=None):
     # stops ringing instead of treating literal "TERMINATE" as an active call.
     if event == 'terminate':
         status = 'TERMINATED'
-    direction = (call.get('direction') or '').upper()
-    # For outbound calls the customer is the callee, not the business number.
-    caller = (call.get('to') if direction == 'BUSINESS_INITIATED' else (call.get('from') or call.get('caller') or '')).strip()
+    caller = (call.get('from') or call.get('caller') or '').strip()
     session_data = call.get('session') or {}
     offer = session_data.get('sdp') if event == 'connect' and session_data.get('sdp_type') == 'offer' else None
-    answer = session_data.get('sdp') if event == 'connect' and session_data.get('sdp_type') == 'answer' else None
     ended = 'NOW()' if event == 'terminate' or status in TERMINAL_STATUSES else 'NULL'
     is_new_incoming_call = event == 'connect' and (call.get('direction') == 'USER_INITIATED')
     conn = get_conn()
@@ -68,8 +64,8 @@ def save_call_event(user_id, phone_number_id, call, profile_names=None):
         already_exists = cur.fetchone() is not None
         cur.execute(f"""
             INSERT INTO whatsapp_calls
-              (call_id, user_id, phone_number_id, caller_phone, caller_name, direction, event, status, offer_sdp, answer_sdp, started_at, ended_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),{ended})
+              (call_id, user_id, phone_number_id, caller_phone, caller_name, direction, event, status, offer_sdp, started_at, ended_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,NOW(),{ended})
             ON CONFLICT (call_id) DO UPDATE SET
               caller_phone=COALESCE(EXCLUDED.caller_phone, whatsapp_calls.caller_phone),
               caller_name=COALESCE(EXCLUDED.caller_name, whatsapp_calls.caller_name),
@@ -83,11 +79,10 @@ def save_call_event(user_id, phone_number_id, call, profile_names=None):
                 ELSE EXCLUDED.status
               END,
               offer_sdp=COALESCE(EXCLUDED.offer_sdp, whatsapp_calls.offer_sdp),
-              answer_sdp=COALESCE(EXCLUDED.answer_sdp, whatsapp_calls.answer_sdp),
               ended_at=CASE WHEN {ended} IS NOT NULL THEN NOW() ELSE whatsapp_calls.ended_at END,
               updated_at=NOW()
         """, (call_id, user_id, phone_number_id, caller,
-              (profile_names or {}).get(caller), direction, event, status, offer, answer))
+              (profile_names or {}).get(caller), call.get('direction') or '', event, status, offer))
         conn.commit()
         cur.close()
         saved = True
@@ -117,7 +112,7 @@ def expire_stale_calls(cur, user_id):
     cur.execute("""UPDATE whatsapp_calls
                    SET status='EXPIRED', ended_at=NOW(), updated_at=NOW()
                    WHERE user_id=%s
-                     AND status NOT IN ('COMPLETED','FAILED','REJECTED','TERMINATED','EXPIRED','ACCEPTING','ACCEPTED')
+                     AND status NOT IN ('COMPLETED','FAILED','REJECTED','TERMINATED','EXPIRED','ACCEPTING')
                      AND created_at < NOW() - (%s * INTERVAL '1 second')""",
                 (user_id, CALL_EXPIRY_SECONDS))
 
@@ -147,95 +142,6 @@ def incoming_calls():
         return jsonify(response)
     finally:
         put_conn(conn)
-
-
-def can_start_call(permission):
-    actions = permission.get('actions') or []
-    return permission.get('status') == 'granted' and any(
-        action.get('action_name') == 'start_call' and action.get('can_perform_action')
-        for action in actions
-    )
-
-
-@calls_bp.route('/outgoing', methods=['GET', 'POST'])
-def outgoing_call():
-    user_id = session.get('user_id')
-    if not user_id:
-        return jsonify({'error': 'Not logged in'}), 401
-    if not CALLING_ENABLED:
-        return jsonify({'error': 'WhatsApp Calling is disabled'}), 403
-    agent_id = agent_id_from_request()
-    if not agent_id:
-        return jsonify({'error': 'Refresh Replies and try again.'}), 400
-    creds = get_wa_credentials(user_id)
-    if not creds or (CALLING_PHONE_NUMBER_ID and creds['phone_number_id'] != CALLING_PHONE_NUMBER_ID):
-        return jsonify({'error': 'Calling is not enabled for this WhatsApp number'}), 403
-
-    if request.method == 'GET':
-        conn = get_conn()
-        try:
-            cur = conn.cursor(); expire_stale_calls(cur, user_id)
-            cur.execute("""SELECT call_id, caller_phone, status, answer_sdp
-                           FROM whatsapp_calls WHERE user_id=%s AND direction='BUSINESS_INITIATED'
-                             AND claimed_by=%s AND status NOT IN ('COMPLETED','FAILED','REJECTED','TERMINATED','EXPIRED')
-                           ORDER BY updated_at DESC LIMIT 1""", (user_id, agent_id))
-            row = cur.fetchone(); conn.commit(); cur.close()
-            return jsonify({'call': {'call_id': row[0], 'phone': row[1], 'status': row[2], 'answer_sdp': row[3] or ''} if row else None})
-        finally:
-            put_conn(conn)
-
-    body = request.get_json(silent=True) or {}
-    phone = re.sub(r'\D', '', str(body.get('phone') or ''))
-    sdp = body.get('sdp') or ''
-    if not re.fullmatch(r'\d{7,15}', phone) or not isinstance(sdp, str) or not sdp.startswith('v=0'):
-        return jsonify({'error': 'Invalid customer phone number or WebRTC offer'}), 400
-
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        expire_stale_calls(cur, user_id)
-        cur.execute('SELECT 1 FROM replies WHERE user_id=%s AND from_phone=%s LIMIT 1', (user_id, phone))
-        known_customer = cur.fetchone()
-        cur.execute("""SELECT 1 FROM whatsapp_calls WHERE user_id=%s
-                       AND status NOT IN ('COMPLETED','FAILED','REJECTED','TERMINATED','EXPIRED') LIMIT 1""", (user_id,))
-        active_call = cur.fetchone(); conn.commit(); cur.close()
-        if not known_customer:
-            return jsonify({'error': 'This customer is not available in your conversations.'}), 404
-        if active_call:
-            return jsonify({'error': 'Another WhatsApp call is already active.'}), 409
-    finally:
-        put_conn(conn)
-
-    try:
-        permission_res = http.get(f"{META_API}/{creds['phone_number_id']}/call_permissions",
-                                  params={'user_wa_id': phone}, headers={'Authorization': f"Bearer {creds['access_token']}"}, timeout=15)
-        permission_data = permission_res.json()
-        permission = permission_data.get('permission') or {}
-        if permission_res.status_code >= 400 or not can_start_call(permission):
-            return jsonify({'error': 'This customer is not currently eligible for WhatsApp calling.', 'eligible': False}), 409
-        res = http.post(f"{META_API}/{creds['phone_number_id']}/calls", headers={
-            'Authorization': f"Bearer {creds['access_token']}", 'Content-Type': 'application/json'}, json={
-            'messaging_product': 'whatsapp', 'to': phone, 'action': 'connect',
-            'session': {'sdp_type': 'offer', 'sdp': sdp},
-            'biz_opaque_callback_data': f'agent:{agent_id}',
-        }, timeout=15)
-        data = res.json()
-        call_id = ((data.get('calls') or [{}])[0].get('id') or '').strip()
-        if res.status_code >= 400 or data.get('error') or not call_id:
-            return jsonify({'error': data.get('error', {}).get('message', 'Meta could not start this call')}), 400
-    except Exception as e:
-        return jsonify({'error': f'Calling API request failed: {e}'}), 502
-
-    conn = get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute("""INSERT INTO whatsapp_calls (call_id,user_id,phone_number_id,caller_phone,direction,event,status,offer_sdp,claimed_by,claimed_at,started_at)
-                       VALUES (%s,%s,%s,%s,'BUSINESS_INITIATED','connect','CALLING',%s,%s,NOW(),NOW())""",
-                    (call_id, user_id, creds['phone_number_id'], phone, sdp, agent_id))
-        conn.commit(); cur.close()
-    finally:
-        put_conn(conn)
-    return jsonify({'success': True, 'call_id': call_id, 'status': 'CALLING'})
 
 
 @calls_bp.route('/<call_id>/action', methods=['POST'])
