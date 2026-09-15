@@ -164,12 +164,7 @@ def call_action(call_id):
     conn = get_conn()
     try:
         cur = conn.cursor()
-        status = {
-            'pre_accept': 'ACCEPTING',
-            'accept': 'ACCEPTING',
-            'reject': 'REJECTED',
-            'terminate': 'TERMINATED',
-        }[action]
+        status = 'ACCEPTING' if action in ('pre_accept', 'accept') else action.upper()
         cur.execute('UPDATE whatsapp_calls SET status=%s, answer_sdp=%s, updated_at=NOW() WHERE call_id=%s AND user_id=%s',
                     (status, sdp if action in ('pre_accept', 'accept') else None, call_id, user_id))
         conn.commit(); cur.close()
