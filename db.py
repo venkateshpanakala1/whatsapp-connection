@@ -208,35 +208,6 @@ def init_db():
                 PRIMARY KEY (user_id, phone_number_id, customer_phone)
             );
 
-            -- Native Android devices use opaque bearer tokens, never the
-            -- browser's Flask session cookie or direct database access.
-            CREATE TABLE IF NOT EXISTS mobile_sessions (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER REFERENCES users(id) NOT NULL,
-                token_hash CHAR(64) NOT NULL UNIQUE,
-                device_name VARCHAR(120),
-                expires_at TIMESTAMP NOT NULL,
-                revoked_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT NOW(),
-                last_used_at TIMESTAMP DEFAULT NOW()
-            );
-            CREATE INDEX IF NOT EXISTS mobile_sessions_active_idx
-                ON mobile_sessions (token_hash, expires_at) WHERE revoked_at IS NULL;
-
-            CREATE TABLE IF NOT EXISTS mobile_devices (
-                id SERIAL PRIMARY KEY,
-                user_id INTEGER REFERENCES users(id) NOT NULL,
-                fcm_token TEXT NOT NULL UNIQUE,
-                device_name VARCHAR(120),
-                platform VARCHAR(20) NOT NULL DEFAULT 'android',
-                active BOOLEAN NOT NULL DEFAULT TRUE,
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW(),
-                last_seen_at TIMESTAMP DEFAULT NOW()
-            );
-            CREATE INDEX IF NOT EXISTS mobile_devices_user_active_idx
-                ON mobile_devices (user_id, active);
-
         """)
         # Defaults existing rows to read so old history doesn't suddenly
         # appear unread; new incoming rows explicitly set FALSE at insert time.

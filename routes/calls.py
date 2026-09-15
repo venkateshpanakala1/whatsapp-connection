@@ -13,7 +13,6 @@ from flask import Blueprint, jsonify, request, session
 
 from db import get_conn, put_conn
 from routes.push import send_push_to_user
-from routes.mobile import mobile_user_id, send_incoming_call_fcm
 
 calls_bp = Blueprint('calls', __name__)
 META_API = f"https://graph.facebook.com/{os.getenv('WHATSAPP_CALLING_GRAPH_API_VERSION', 'v26.0')}"
@@ -59,9 +58,7 @@ def save_call_event(user_id, phone_number_id, call, profile_names=None):
     offer = session_data.get('sdp') if event == 'connect' and session_data.get('sdp_type') == 'offer' else None
     answer = session_data.get('sdp') if event == 'connect' and session_data.get('sdp_type') == 'answer' else None
     ended = 'NOW()' if event == 'terminate' or status in TERMINAL_STATUSES else 'NULL'
-    is_new_incoming_call = event == 'connect' and direction == 'USER_INITIATED'
-    saved = False
-    already_exists = False
+    is_new_incoming_call = event == 'connect' and (call.get('direction') == 'USER_INITIATED')
     conn = get_conn()
     try:
         cur = conn.cursor()
@@ -106,22 +103,12 @@ def save_call_event(user_id, phone_number_id, call, profile_names=None):
             user_id, 'Incoming WhatsApp call', f'{caller_name} is calling',
             f'/replies?call={quote(call_id, safe="")}', 'incoming-call', call_id,
         ), daemon=True).start()
-        # Android receives only an opaque call id and display metadata. SDP is
-        # fetched later through its authenticated API request, never via FCM.
-        threading.Thread(target=send_incoming_call_fcm, args=(
-            user_id, call_id, caller_name, caller,
-        ), daemon=True).start()
 
 
 def agent_id_from_request():
     """A stable random id held by one Replies browser profile/tab family."""
     agent_id = (request.headers.get('X-Call-Agent-ID') or '').strip()
     return agent_id[:80] if agent_id else ''
-
-
-def authenticated_call_user_id():
-    """Support the existing browser session and Android bearer sessions."""
-    return session.get('user_id') or mobile_user_id()
 
 
 def expire_stale_calls(cur, user_id):
@@ -135,7 +122,7 @@ def expire_stale_calls(cur, user_id):
 
 @calls_bp.route('/incoming', methods=['GET'])
 def incoming_calls():
-    user_id = authenticated_call_user_id()
+    user_id = session.get('user_id')
     if not user_id:
         return jsonify({'error': 'Not logged in'}), 401
     if not CALLING_ENABLED:
@@ -162,7 +149,7 @@ def incoming_calls():
 
 @calls_bp.route('/<call_id>/action', methods=['POST'])
 def call_action(call_id):
-    user_id = authenticated_call_user_id()
+    user_id = session.get('user_id')
     if not user_id:
         return jsonify({'error': 'Not logged in'}), 401
     if not CALLING_ENABLED:
@@ -193,7 +180,6 @@ def call_action(call_id):
             cur.execute("""UPDATE whatsapp_calls
                            SET claimed_by=%s, claimed_at=NOW(), status='CLAIMED', updated_at=NOW()
                            WHERE call_id=%s AND user_id=%s AND phone_number_id=%s
-                             AND direction='USER_INITIATED'
                              AND claimed_by IS NULL
                              AND status NOT IN ('COMPLETED','FAILED','REJECTED','TERMINATED','EXPIRED')
                            RETURNING call_id""", (agent_id, call_id, user_id, creds['phone_number_id']))
@@ -204,9 +190,7 @@ def call_action(call_id):
                 return jsonify({'error': 'Another agent already handled this call, or it has expired.'}), 409
             return jsonify({'success': True, 'claimed': True})
 
-        cur.execute("""SELECT phone_number_id, claimed_by FROM whatsapp_calls
-                       WHERE call_id=%s AND user_id=%s AND direction='USER_INITIATED' FOR UPDATE""",
-                    (call_id, user_id))
+        cur.execute('SELECT phone_number_id, claimed_by FROM whatsapp_calls WHERE call_id=%s AND user_id=%s FOR UPDATE', (call_id, user_id))
         row = cur.fetchone()
         if not row or row[0] != creds['phone_number_id']:
             conn.commit(); cur.close()
