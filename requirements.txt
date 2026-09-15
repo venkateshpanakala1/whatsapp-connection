@@ -6,3 +6,4 @@ python-dotenv
 openpyxl
 gunicorn
 pywebpush
+firebase-admin

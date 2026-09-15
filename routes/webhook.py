@@ -81,7 +81,7 @@ def receive():
                     for call in value.get('calls', []):
                         event = call.get('event', 'unknown')
                         call_id = call.get('id', '')
-                        direction = call.get('direction', '')
+                        direction = (call.get('direction') or '').upper()
                         print(f'[calls] webhook event={event} call_id={call_id} direction={direction} from={call.get("from", "")}')
                         if direction == 'USER_INITIATED':
                             save_call_event(user_id, phone_number_id, call, profile_names)
