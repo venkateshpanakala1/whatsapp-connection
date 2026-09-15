@@ -108,9 +108,6 @@ if ('serviceWorker' in navigator) {
     if (event.data?.type === 'new-reply') {
       window.dispatchEvent(new CustomEvent('push-new-reply'));
     }
-    if (event.data?.type === 'incoming-call') {
-      window.dispatchEvent(new CustomEvent('push-new-call'));
-    }
   });
 }
 

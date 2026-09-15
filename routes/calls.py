@@ -5,15 +5,12 @@ flows directly between the browser's WebRTC peer connection and Meta; Railway
 is not used as an RTP/SIP server.
 """
 import os
-import threading
 from datetime import datetime
-from urllib.parse import quote
 
 import requests as http
 from flask import Blueprint, jsonify, request, session
 
 from db import get_conn, put_conn
-from routes.push import send_push_to_user
 
 calls_bp = Blueprint('calls', __name__)
 META_API = f"https://graph.facebook.com/{os.getenv('WHATSAPP_CALLING_GRAPH_API_VERSION', 'v26.0')}"
@@ -26,8 +23,6 @@ TERMINAL_STATUSES = ('COMPLETED', 'FAILED', 'REJECTED', 'TERMINATED')
 
 
 def get_wa_credentials(user_id):
-    already_exists = True
-    saved = False
     conn = get_conn()
     try:
         cur = conn.cursor()
@@ -51,12 +46,9 @@ def save_call_event(user_id, phone_number_id, call, profile_names=None):
     session_data = call.get('session') or {}
     offer = session_data.get('sdp') if event == 'connect' and session_data.get('sdp_type') == 'offer' else None
     ended = 'NOW()' if event == 'terminate' or status in TERMINAL_STATUSES else 'NULL'
-    is_new_incoming_call = event == 'connect' and (call.get('direction') == 'USER_INITIATED')
     conn = get_conn()
     try:
         cur = conn.cursor()
-        cur.execute('SELECT 1 FROM whatsapp_calls WHERE call_id = %s', (call_id,))
-        already_exists = cur.fetchone() is not None
         cur.execute(f"""
             INSERT INTO whatsapp_calls
               (call_id, user_id, phone_number_id, caller_phone, caller_name, direction, event, status, offer_sdp, started_at, ended_at)
@@ -72,21 +64,11 @@ def save_call_event(user_id, phone_number_id, call, profile_names=None):
               (profile_names or {}).get(caller), call.get('direction') or '', event, status, offer))
         conn.commit()
         cur.close()
-        saved = True
     except Exception as e:
         conn.rollback()
         print(f'[calls] save event failed call_id={call_id}: {e}')
     finally:
         put_conn(conn)
-
-    # A service worker can display this notification while the PWA is closed.
-    # Do not include SDP or any call-control information in a push payload.
-    if saved and is_new_incoming_call and not already_exists:
-        caller_name = (profile_names or {}).get(caller) or caller or 'WhatsApp contact'
-        threading.Thread(target=send_push_to_user, args=(
-            user_id, 'Incoming WhatsApp call', f'{caller_name} is calling',
-            f'/replies?call={quote(call_id, safe="")}'
-        ), daemon=True).start()
 
 
 @calls_bp.route('/incoming', methods=['GET'])
