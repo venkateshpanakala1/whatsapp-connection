@@ -15,7 +15,6 @@ from routes.auth import auth_bp
 from routes.push import push_bp
 from routes.budget import budget_bp
 from routes.name_finder import name_finder_bp
-from routes.calls import calls_bp
 
 load_dotenv()
 
@@ -34,7 +33,6 @@ app.register_blueprint(auth_bp,      url_prefix='/api/auth')
 app.register_blueprint(push_bp,      url_prefix='/api/push')
 app.register_blueprint(budget_bp,    url_prefix='/api/budget')
 app.register_blueprint(name_finder_bp, url_prefix='/api/name-finder')
-app.register_blueprint(calls_bp,       url_prefix='/api/calls')
 
 init_db()
 backfill_reply_contact_names()

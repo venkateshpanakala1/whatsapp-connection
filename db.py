@@ -171,28 +171,6 @@ def init_db():
                 PRIMARY KEY (user_id, template_name)
             );
 
-            -- Signalling state for WhatsApp Cloud API user-initiated calls.
-            -- Audio is never stored here; SDP is retained only while an agent
-            -- needs it to establish the WebRTC session.
-            CREATE TABLE IF NOT EXISTS whatsapp_calls (
-                call_id VARCHAR(255) PRIMARY KEY,
-                user_id INTEGER REFERENCES users(id),
-                phone_number_id VARCHAR(100) NOT NULL,
-                caller_phone VARCHAR(20),
-                caller_name VARCHAR(200),
-                direction VARCHAR(30),
-                event VARCHAR(30),
-                status VARCHAR(50) DEFAULT 'incoming',
-                offer_sdp TEXT,
-                answer_sdp TEXT,
-                started_at TIMESTAMP,
-                ended_at TIMESTAMP,
-                created_at TIMESTAMP DEFAULT NOW(),
-                updated_at TIMESTAMP DEFAULT NOW()
-            );
-            CREATE INDEX IF NOT EXISTS whatsapp_calls_user_status_idx
-                ON whatsapp_calls (user_id, status, updated_at DESC);
-
         """)
         # Defaults existing rows to read so old history doesn't suddenly
         # appear unread; new incoming rows explicitly set FALSE at insert time.
