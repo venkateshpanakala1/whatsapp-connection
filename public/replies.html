@@ -30,7 +30,7 @@
     }
     .btn-call-sound:hover { background: #bbf7d0; }
     .incoming-call {
-      display:none; position:fixed; z-index:1001; right:22px; top:22px;
+      display:none; position:fixed; z-index:1001; right:22px; bottom:22px;
       width:min(360px, calc(100vw - 44px)); background:#10213f; color:#fff;
       border:1px solid rgba(37,211,102,.6); border-radius:14px; padding:18px;
       box-shadow:0 12px 36px rgba(0,0,0,.38);
@@ -412,6 +412,9 @@
     <button class="call-end" id="call-end" onclick="endIncomingCall()" style="display:none">End call</button>
   </div>
 </div>
+<audio id="incoming-call-ringtone" preload="auto" loop>
+  <source src="/sounds/incoming-call.wav" type="audio/wav">
+</audio>
 <audio id="call-remote-audio" autoplay></audio>
 
 <script>
@@ -428,8 +431,7 @@
   let activeIncomingCall = null;
   let callPeer = null;
   let ringingCallId = null;
-  let ringtoneTimer = null;
-  const CALL_RINGTONE_VOLUME = 0.16;
+  const CALL_RINGTONE_VOLUME = 0.78;
   // Identifies this browser agent for the server's atomic call claim.
   const callAgentId = (() => {
     const key = 'whatsapp-call-agent-id';
@@ -1219,58 +1221,50 @@
   function startIncomingCallTone() {
     const callId = activeIncomingCall?.call_id;
     if (!callId || ringingCallId === callId) return;
+    const ringtone = document.getElementById('incoming-call-ringtone');
     stopIncomingCallTone();
     ringingCallId = callId;
-    const ctx = ensureAudioCtx();
-    if (!ctx || ctx.state !== 'running') {
-      // Audio requires one tap in most mobile browsers. The header button
-      // resumes the same smooth tone without reloading the Replies page.
-      document.getElementById('call-sound-btn').style.display = 'inline-flex';
-      return;
-    }
-    playSmoothRingtone();
-    ringtoneTimer = setInterval(playSmoothRingtone, 2600);
+    ringtone.loop = true;
+    ringtone.volume = CALL_RINGTONE_VOLUME;
+    ringtone.currentTime = 0;
+    ringtone.play().catch(() => {
+      // Autoplay is blocked until the agent explicitly enables call sound.
+      // Keep the call UI visible, but never create another loop on polls.
+      if (ringingCallId === callId) {
+        document.getElementById('call-sound-btn').style.display = 'inline-flex';
+      }
+    });
   }
 
   function stopIncomingCallTone() {
     ringingCallId = null;
-    if (ringtoneTimer) clearInterval(ringtoneTimer);
-    ringtoneTimer = null;
-  }
-
-  // A soft two-note chime generated in the browser. It avoids the harsh WAV
-  // loop and needs no additional media asset or network request.
-  function playSmoothRingtone() {
-    const ctx = ensureAudioCtx();
-    if (!ctx || ctx.state !== 'running') return;
-    const start = ctx.currentTime;
-    [[659.25, 0], [783.99, 0.42]].forEach(([frequency, offset]) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(frequency, start + offset);
-      gain.gain.setValueAtTime(0.0001, start + offset);
-      gain.gain.exponentialRampToValueAtTime(CALL_RINGTONE_VOLUME, start + offset + 0.06);
-      gain.gain.exponentialRampToValueAtTime(0.0001, start + offset + 0.72);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(start + offset);
-      osc.stop(start + offset + 0.75);
-    });
+    const ringtone = document.getElementById('incoming-call-ringtone');
+    ringtone.pause();
+    ringtone.currentTime = 0;
   }
 
   async function enableCallSound() {
+    const ringtone = document.getElementById('incoming-call-ringtone');
     const button = document.getElementById('call-sound-btn');
+    const configuredVolume = ringtone.volume || CALL_RINGTONE_VOLUME;
     button.disabled = true;
     try {
-      const ctx = ensureAudioCtx();
-      if (!ctx) throw new Error('Audio is not supported in this browser.');
-      await ctx.resume();
+      // A muted play/pause is a user-gesture-safe unlock and does not make a
+      // test "cling". Subsequent incoming calls can use the looping file.
+      ringtone.volume = 0;
+      await ringtone.play();
+      ringtone.pause();
+      ringtone.currentTime = 0;
+      ringtone.volume = configuredVolume;
       button.style.display = 'none';
       if (activeIncomingCall && !callPeer) {
         ringingCallId = null;
         startIncomingCallTone();
       }
     } catch (e) {
+      ringtone.pause();
+      ringtone.currentTime = 0;
+      ringtone.volume = configuredVolume;
       button.disabled = false;
       button.textContent = '🔊 Tap to Enable Call Sound';
     }
@@ -1368,7 +1362,8 @@
     // Keep an enabled ringtone running in an already-open background tab.
     // If a browser paused it while backgrounded, resume it on return.
     if (!document.hidden && activeIncomingCall && !callPeer) {
-      ringingCallId = null;
+      const ringtone = document.getElementById('incoming-call-ringtone');
+      if (ringtone.paused) ringingCallId = null;
       startIncomingCallTone();
     }
   });
