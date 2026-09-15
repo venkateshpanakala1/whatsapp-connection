@@ -419,6 +419,7 @@
   let crStreams      = new Map(); // cr_id -> setInterval timer id
   let activeIncomingCall = null;
   let callPeer = null;
+  let callToneTimer = null;
 
   async function loadSidebarStatus() {
     try {
@@ -1183,9 +1184,34 @@
     activeIncomingCall = call || null;
     const box = document.getElementById('incoming-call');
     box.classList.toggle('show', !!call);
-    if (!call) return;
+    if (!call) { stopIncomingCallTone(); return; }
     document.getElementById('incoming-call-title').textContent = call.name || call.phone || 'Incoming WhatsApp call';
     document.getElementById('incoming-call-info').textContent = text || 'Incoming WhatsApp voice call';
+    if (!callPeer) startIncomingCallTone();
+  }
+
+  function startIncomingCallTone() {
+    if (callToneTimer) return;
+    // Browsers may block audible playback until the agent has interacted with
+    // the app. The background case is covered by the OS push sound instead.
+    const ring = () => {
+      try {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        const ctx = new Ctx();
+        [440, 480].forEach((frequency, index) => {
+          const osc = ctx.createOscillator(), gain = ctx.createGain();
+          osc.frequency.value = frequency; gain.gain.setValueAtTime(.0001, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(.10, ctx.currentTime + .03);
+          gain.gain.exponentialRampToValueAtTime(.0001, ctx.currentTime + .45);
+          osc.connect(gain).connect(ctx.destination); osc.start(ctx.currentTime + index * .08); osc.stop(ctx.currentTime + .5);
+        });
+        setTimeout(() => ctx.close(), 700);
+      } catch (e) {}
+    };
+    ring(); callToneTimer = setInterval(ring, 1800);
+  }
+  function stopIncomingCallTone() {
+    if (callToneTimer) { clearInterval(callToneTimer); callToneTimer = null; }
   }
 
   async function loadIncomingCalls() {
@@ -1239,6 +1265,7 @@
       await callPeer.setLocalDescription(await callPeer.createAnswer());
       await waitForIceComplete(callPeer);
       await callApi('pre_accept', callPeer.localDescription.sdp);
+      stopIncomingCallTone();
       setCallUi(activeIncomingCall, 'Connecting secure audio…');
     } catch (e) {
       setCallUi(activeIncomingCall, `Could not accept: ${e.message}`);
@@ -1258,12 +1285,15 @@
     cleanupCallUi();
   }
   function cleanupCallUi() {
+    stopIncomingCallTone();
     if (callPeer) { callPeer.getSenders().forEach(s => s.track?.stop()); callPeer.close(); callPeer = null; }
     document.getElementById('call-accept').disabled = false;
     document.getElementById('call-reject').style.display = 'inline-block';
     document.getElementById('call-end').style.display = 'none';
     setCallUi(null);
   }
+
+  window.addEventListener('push-new-call', () => loadIncomingCalls());
 
   if (typeof Notification !== 'undefined' && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
     document.getElementById('notify-btn').style.display = 'inline-flex';
