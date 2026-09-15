@@ -155,6 +155,8 @@ TENANT_DATA_TABLES = [
     ('send_jobs', 'user_id = %s'),
     ('template_media', 'user_id = %s'),
     ('push_subscriptions', 'user_id = %s'),
+    ('mobile_devices', 'user_id = %s'),
+    ('mobile_sessions', 'user_id = %s'),
 ]
 
 
