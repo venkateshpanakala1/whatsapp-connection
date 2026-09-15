@@ -20,7 +20,7 @@ Install Android Studio (which supplies the Gradle wrapper) or add a standard Gra
 ./gradlew.bat assembleDebug
 ```
 
-The APK is generated at `app/build/outputs/apk/debug/app-debug.apk`. Copy it to the backend's release artifact as `public/downloads/V7.apk` only after testing; Railway can then serve it at `/downloads/V7.apk`.
+The APK is generated at `app/build/outputs/apk/debug/app-debug.apk`. Copy it to the backend's release artifact as `public/downloads/V7.apk` only after testing; Railway can then serve it at `/downloads/V7.apk`. The login page's **Download Android APK** button already uses this URL; the old **Install Web Shortcut** button remains available for the PWA.
 
 ## Current phase
 
