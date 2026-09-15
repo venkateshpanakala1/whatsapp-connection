@@ -6,6 +6,7 @@ is not used as an RTP/SIP server.
 """
 import os
 import threading
+from datetime import datetime
 from urllib.parse import quote
 
 import requests as http
@@ -22,12 +23,11 @@ CALLING_ENABLED = os.getenv('WHATSAPP_CALLING_ENABLED', '').lower() in ('1', 'tr
 # other tenant remain untouched.
 CALLING_PHONE_NUMBER_ID = os.getenv('WHATSAPP_CALLING_PHONE_NUMBER_ID', '').strip()
 TERMINAL_STATUSES = ('COMPLETED', 'FAILED', 'REJECTED', 'TERMINATED')
-# Meta's caller controls the actual ringing window. This is only a local UI
-# safety net so a missed terminal webhook cannot leave an agent ringing.
-CALL_EXPIRY_SECONDS = max(15, min(int(os.getenv('WHATSAPP_CALL_EXPIRY_SECONDS', '60')), 300))
 
 
 def get_wa_credentials(user_id):
+    already_exists = True
+    saved = False
     conn = get_conn()
     try:
         cur = conn.cursor()
@@ -69,15 +69,7 @@ def save_call_event(user_id, phone_number_id, call, profile_names=None):
             ON CONFLICT (call_id) DO UPDATE SET
               caller_phone=COALESCE(EXCLUDED.caller_phone, whatsapp_calls.caller_phone),
               caller_name=COALESCE(EXCLUDED.caller_name, whatsapp_calls.caller_name),
-              event=EXCLUDED.event,
-              status=CASE
-                -- Do not let a late non-terminal webhook undo the browser
-                -- agent's atomic claim while it is preparing WebRTC.
-                WHEN whatsapp_calls.status IN ('CLAIMED','ACCEPTING')
-                  AND EXCLUDED.status NOT IN ('COMPLETED','FAILED','REJECTED','TERMINATED')
-                  THEN whatsapp_calls.status
-                ELSE EXCLUDED.status
-              END,
+              event=EXCLUDED.event, status=EXCLUDED.status,
               offer_sdp=COALESCE(EXCLUDED.offer_sdp, whatsapp_calls.offer_sdp),
               ended_at=CASE WHEN {ended} IS NOT NULL THEN NOW() ELSE whatsapp_calls.ended_at END,
               updated_at=NOW()
@@ -98,23 +90,8 @@ def save_call_event(user_id, phone_number_id, call, profile_names=None):
         caller_name = (profile_names or {}).get(caller) or caller or 'WhatsApp contact'
         threading.Thread(target=send_push_to_user, args=(
             user_id, 'Incoming WhatsApp call', f'{caller_name} is calling',
-            f'/replies?call={quote(call_id, safe="")}', 'incoming-call', call_id,
+            f'/replies?call={quote(call_id, safe="")}'
         ), daemon=True).start()
-
-
-def agent_id_from_request():
-    """A stable random id held by one Replies browser profile/tab family."""
-    agent_id = (request.headers.get('X-Call-Agent-ID') or '').strip()
-    return agent_id[:80] if agent_id else ''
-
-
-def expire_stale_calls(cur, user_id):
-    cur.execute("""UPDATE whatsapp_calls
-                   SET status='EXPIRED', ended_at=NOW(), updated_at=NOW()
-                   WHERE user_id=%s
-                     AND status NOT IN ('COMPLETED','FAILED','REJECTED','TERMINATED','EXPIRED','ACCEPTING')
-                     AND created_at < NOW() - (%s * INTERVAL '1 second')""",
-                (user_id, CALL_EXPIRY_SECONDS))
 
 
 @calls_bp.route('/incoming', methods=['GET'])
@@ -127,19 +104,15 @@ def incoming_calls():
     conn = get_conn()
     try:
         cur = conn.cursor()
-        expire_stale_calls(cur, user_id)
         cur.execute("""SELECT call_id, caller_phone, caller_name, status, offer_sdp, created_at
                        FROM whatsapp_calls
                        WHERE user_id=%s AND direction='USER_INITIATED'
-                         AND status NOT IN ('COMPLETED','FAILED','REJECTED','TERMINATED','EXPIRED')
-                         AND (claimed_by IS NULL OR claimed_by=%s)
-                       ORDER BY updated_at DESC LIMIT 5""", (user_id, agent_id_from_request()))
+                         AND status NOT IN ('COMPLETED','FAILED','REJECTED','TERMINATED')
+                       ORDER BY updated_at DESC LIMIT 5""", (user_id,))
         rows = cur.fetchall()
         cur.close()
-        response = {'enabled': True, 'calls': [{'call_id': r[0], 'phone': r[1] or '', 'name': r[2] or '',
-            'status': r[3], 'offer_sdp': r[4] or '', 'created_at': r[5].isoformat() + 'Z' if r[5] else ''} for r in rows]}
-        conn.commit()
-        return jsonify(response)
+        return jsonify({'enabled': True, 'calls': [{'call_id': r[0], 'phone': r[1] or '', 'name': r[2] or '',
+            'status': r[3], 'offer_sdp': r[4] or '', 'created_at': r[5].isoformat() + 'Z' if r[5] else ''} for r in rows]})
     finally:
         put_conn(conn)
 
@@ -153,14 +126,11 @@ def call_action(call_id):
         return jsonify({'error': 'WhatsApp Calling is disabled'}), 403
     body = request.get_json(silent=True) or {}
     action = (body.get('action') or '').lower()
-    if action not in ('claim', 'release', 'pre_accept', 'accept', 'reject', 'terminate'):
+    if action not in ('pre_accept', 'accept', 'reject', 'terminate'):
         return jsonify({'error': 'Invalid call action'}), 400
     sdp = body.get('sdp') or ''
     if action in ('pre_accept', 'accept') and (not isinstance(sdp, str) or not sdp.startswith('v=0')):
         return jsonify({'error': 'A WebRTC SDP answer is required to accept this call'}), 400
-    agent_id = agent_id_from_request()
-    if not agent_id:
-        return jsonify({'error': 'This browser cannot identify its call session. Refresh Replies and try again.'}), 400
 
     creds = get_wa_credentials(user_id)
     if not creds:
@@ -170,55 +140,13 @@ def call_action(call_id):
     conn = get_conn()
     try:
         cur = conn.cursor()
-        expire_stale_calls(cur, user_id)
-        # Claim before microphone/WebRTC work. PostgreSQL's row lock makes
-        # exactly one agent win if two Accept buttons are pressed together.
-        if action == 'claim':
-            cur.execute("""UPDATE whatsapp_calls
-                           SET claimed_by=%s, claimed_at=NOW(), status='CLAIMED', updated_at=NOW()
-                           WHERE call_id=%s AND user_id=%s AND phone_number_id=%s
-                             AND claimed_by IS NULL
-                             AND status NOT IN ('COMPLETED','FAILED','REJECTED','TERMINATED','EXPIRED')
-                           RETURNING call_id""", (agent_id, call_id, user_id, creds['phone_number_id']))
-            claimed = cur.fetchone()
-            conn.commit()
-            cur.close()
-            if not claimed:
-                return jsonify({'error': 'Another agent already handled this call, or it has expired.'}), 409
-            return jsonify({'success': True, 'claimed': True})
-
-        cur.execute('SELECT phone_number_id, claimed_by FROM whatsapp_calls WHERE call_id=%s AND user_id=%s FOR UPDATE', (call_id, user_id))
+        cur.execute('SELECT phone_number_id FROM whatsapp_calls WHERE call_id=%s AND user_id=%s', (call_id, user_id))
         row = cur.fetchone()
-        if not row or row[0] != creds['phone_number_id']:
-            conn.commit(); cur.close()
-            return jsonify({'error': 'Call not found'}), 404
-        if action in ('pre_accept', 'accept', 'terminate') and row[1] != agent_id:
-            conn.commit(); cur.close()
-            return jsonify({'error': 'This call is being handled by another agent.'}), 409
-        if action == 'reject' and row[1] not in (None, agent_id):
-            conn.commit(); cur.close()
-            return jsonify({'error': 'This call is being handled by another agent.'}), 409
-        if action == 'reject' and row[1] is None:
-            # Reject participates in the same lock/claim protocol as Accept,
-            # so it cannot race an agent that is beginning to answer.
-            cur.execute("""UPDATE whatsapp_calls SET claimed_by=%s, claimed_at=NOW(), status='CLAIMED', updated_at=NOW()
-                           WHERE call_id=%s AND user_id=%s""", (agent_id, call_id, user_id))
         cur.close()
-        conn.commit()
+        if not row or row[0] != creds['phone_number_id']:
+            return jsonify({'error': 'Call not found'}), 404
     finally:
         put_conn(conn)
-
-    if action == 'release':
-        conn = get_conn()
-        try:
-            cur = conn.cursor()
-            cur.execute("""UPDATE whatsapp_calls SET claimed_by=NULL, claimed_at=NULL, status='CONNECT', updated_at=NOW()
-                           WHERE call_id=%s AND user_id=%s AND claimed_by=%s AND status='CLAIMED'""",
-                        (call_id, user_id, agent_id))
-            conn.commit(); cur.close()
-        finally:
-            put_conn(conn)
-        return jsonify({'success': True})
 
     payload = {'messaging_product': 'whatsapp', 'action': action, 'call_id': call_id}
     if action in ('pre_accept', 'accept'):
