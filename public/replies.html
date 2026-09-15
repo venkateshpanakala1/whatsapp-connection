@@ -23,6 +23,12 @@
       transition: all var(--t);
     }
     .btn-notify:hover { background: #fef08a; }
+    .btn-call-sound {
+      padding: 7px 14px; background: #dcfce7; border: 1.5px solid #22c55e;
+      color: #166534; border-radius: 8px; font-size: 12px; font-weight: 700;
+      cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .btn-call-sound:hover { background: #bbf7d0; }
     .incoming-call {
       display:none; position:fixed; z-index:1001; right:22px; bottom:22px;
       width:min(360px, calc(100vw - 44px)); background:#10213f; color:#fff;
@@ -344,6 +350,7 @@
     </div>
     <div class="ph-user">
       <button class="btn-notify" id="notify-btn" onclick="handleEnablePush()" style="display:none">🔔 Enable Notifications</button>
+      <button class="btn-call-sound" id="call-sound-btn" onclick="enableCallSound()">🔊 Enable Call Sound</button>
       <div class="ph-email-chip">
         <span class="ph-avatar" id="hdr-avatar">?</span>
         <span class="ph-email" id="hdr-email"></span>
@@ -404,6 +411,9 @@
     <button class="call-end" id="call-end" onclick="endIncomingCall()" style="display:none">End call</button>
   </div>
 </div>
+<audio id="incoming-call-ringtone" preload="auto" loop>
+  <source src="/sounds/incoming-call.wav" type="audio/wav">
+</audio>
 <audio id="call-remote-audio" autoplay></audio>
 
 <script>
@@ -419,7 +429,8 @@
   let crStreams      = new Map(); // cr_id -> setInterval timer id
   let activeIncomingCall = null;
   let callPeer = null;
-  let callToneTimer = null;
+  let ringingCallId = null;
+  const CALL_RINGTONE_VOLUME = 0.78;
   // Identifies this browser agent for the server's atomic call claim.
   const callAgentId = (() => {
     const key = 'whatsapp-call-agent-id';
@@ -1189,7 +1200,8 @@
   threadMessagesEl.addEventListener('click', onBubbleClickCapture, true);
 
   setInterval(loadConversations, 20000);
-  setInterval(loadIncomingCalls, 3000);
+  // Keep terminal call state responsive without changing message polling.
+  setInterval(loadIncomingCalls, 1000);
   loadSidebarStatus();
   loadConversations();
   loadIncomingCalls();
@@ -1199,41 +1211,62 @@
     const box = document.getElementById('incoming-call');
     box.classList.toggle('show', !!call);
     if (!call) { stopIncomingCallTone(); return; }
+    if (ringingCallId && ringingCallId !== call.call_id) stopIncomingCallTone();
     document.getElementById('incoming-call-title').textContent = call.name || call.phone || 'Incoming WhatsApp call';
     document.getElementById('incoming-call-info').textContent = text || 'Incoming WhatsApp voice call';
     if (!callPeer && !document.hidden) startIncomingCallTone();
   }
 
   function startIncomingCallTone() {
-    if (callToneTimer || document.hidden) return;
-    // Browsers may block audible playback until the agent has interacted with
-    // the app. The background case is covered by the OS push sound instead.
-    const ring = () => {
-      const ctx = ensureAudioCtx();
-      if (!ctx) return;
-      if (ctx.state !== 'running') {
-        ctx.resume().then(() => {
-          if (callToneTimer && !document.hidden) ring();
-        }).catch(() => {});
-        return;
+    const callId = activeIncomingCall?.call_id;
+    if (!callId || document.hidden || ringingCallId === callId) return;
+    const ringtone = document.getElementById('incoming-call-ringtone');
+    stopIncomingCallTone();
+    ringingCallId = callId;
+    ringtone.loop = true;
+    ringtone.volume = CALL_RINGTONE_VOLUME;
+    ringtone.currentTime = 0;
+    ringtone.play().catch(() => {
+      // Autoplay is blocked until the agent explicitly enables call sound.
+      // Keep the call UI visible, but never create another loop on polls.
+      if (ringingCallId === callId) {
+        document.getElementById('call-sound-btn').style.display = 'inline-flex';
       }
-      try {
-        [[659.25, 0], [783.99, .09], [659.25, .42], [783.99, .51]].forEach(([frequency, offset]) => {
-          const osc = ctx.createOscillator(), gain = ctx.createGain();
-          osc.type = 'triangle';
-          osc.frequency.value = frequency;
-          gain.gain.setValueAtTime(.0001, ctx.currentTime + offset);
-          gain.gain.exponentialRampToValueAtTime(.22, ctx.currentTime + offset + .025);
-          gain.gain.exponentialRampToValueAtTime(.0001, ctx.currentTime + offset + .27);
-          osc.connect(gain).connect(ctx.destination);
-          osc.start(ctx.currentTime + offset); osc.stop(ctx.currentTime + offset + .3);
-        });
-      } catch (e) {}
-    };
-    ring(); callToneTimer = setInterval(ring, 1800);
+    });
   }
+
   function stopIncomingCallTone() {
-    if (callToneTimer) { clearInterval(callToneTimer); callToneTimer = null; }
+    ringingCallId = null;
+    const ringtone = document.getElementById('incoming-call-ringtone');
+    ringtone.pause();
+    ringtone.currentTime = 0;
+  }
+
+  async function enableCallSound() {
+    const ringtone = document.getElementById('incoming-call-ringtone');
+    const button = document.getElementById('call-sound-btn');
+    const configuredVolume = ringtone.volume || CALL_RINGTONE_VOLUME;
+    button.disabled = true;
+    try {
+      // A muted play/pause is a user-gesture-safe unlock and does not make a
+      // test "cling". Subsequent incoming calls can use the looping file.
+      ringtone.volume = 0;
+      await ringtone.play();
+      ringtone.pause();
+      ringtone.currentTime = 0;
+      ringtone.volume = configuredVolume;
+      button.style.display = 'none';
+      if (activeIncomingCall && !callPeer && !document.hidden) {
+        ringingCallId = null;
+        startIncomingCallTone();
+      }
+    } catch (e) {
+      ringtone.pause();
+      ringtone.currentTime = 0;
+      ringtone.volume = configuredVolume;
+      button.disabled = false;
+      button.textContent = '🔊 Tap to Enable Call Sound';
+    }
   }
 
   async function loadIncomingCalls() {
@@ -1269,6 +1302,7 @@
     if (!activeIncomingCall?.offer_sdp) return;
     const accept = document.getElementById('call-accept');
     accept.disabled = true;
+    stopIncomingCallTone();
     let claimed = false;
     try {
       // The first agent to claim wins before any microphone/WebRTC work starts.
@@ -1327,6 +1361,7 @@
     if (document.hidden) stopIncomingCallTone();
     else if (activeIncomingCall && !callPeer) startIncomingCallTone();
   });
+  window.addEventListener('pagehide', stopIncomingCallTone);
 
   if (typeof Notification !== 'undefined' && Notification.permission !== 'granted' && Notification.permission !== 'denied') {
     document.getElementById('notify-btn').style.display = 'inline-flex';
