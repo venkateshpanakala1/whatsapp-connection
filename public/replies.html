@@ -1323,30 +1323,13 @@
       await waitForIceComplete(callPeer);
       const res = await fetch('/api/calls/outgoing', { method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json','X-Call-Agent-ID':callAgentId}, body:JSON.stringify({phone:currentPhone, sdp:callPeer.localDescription.sdp}) });
       const data = await res.json();
-      if (!res.ok) {
-        if (data.can_request_permission && confirm(`${data.error}\n\nSend a WhatsApp call-permission request now?`)) {
-          await requestCallPermission();
-          cleanupOutboundCall();
-          return;
-        }
-        throw new Error(data.error || 'Could not start call');
-      }
+      if (!res.ok) throw new Error(data.error || 'Could not start call');
       activeOutgoingCall = {call_id:data.call_id, phone:currentPhone, status:data.status};
       outboundAnswerApplied = false;
     } catch (e) {
       cleanupOutboundCall();
       alert(e.message);
     }
-  }
-
-  async function requestCallPermission() {
-    const res = await fetch('/api/calls/outgoing/permission-request', {
-      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json','X-Call-Agent-ID':callAgentId},
-      body:JSON.stringify({phone:currentPhone})
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Could not request call permission');
-    alert(data.message);
   }
 
   async function loadOutgoingCall() {
