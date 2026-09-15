@@ -1,17 +1,13 @@
 from flask import Blueprint, request, jsonify
 from db import get_conn, put_conn
 from routes.push import send_push_to_user
-from routes.calls import save_call_event, CALLING_ENABLED, CALLING_PHONE_NUMBER_ID
 import os
 import json
 import threading
 import requests as http
-import hmac
-import hashlib
 
 webhook_bp = Blueprint('webhook', __name__)
 VERIFY_TOKEN = os.getenv('WEBHOOK_VERIFY_TOKEN', 'myverifytoken123')
-META_APP_SECRET = os.getenv('META_APP_SECRET', '')
 META_API = 'https://graph.facebook.com/v22.0'
 
 # Message types that carry downloadable media, keyed to where WhatsApp puts
@@ -33,15 +29,6 @@ def verify():
 # POST /webhook  — incoming messages + status updates from Meta
 @webhook_bp.route('/webhook', methods=['POST'])
 def receive():
-    # Signature validation is opt-in while existing deployments add the app
-    # secret. Once configured, reject forged events before parsing anything.
-    raw_body = request.get_data(cache=True)
-    if META_APP_SECRET:
-        signature = request.headers.get('X-Hub-Signature-256', '')
-        expected = 'sha256=' + hmac.new(META_APP_SECRET.encode(), raw_body, hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(signature, expected):
-            print('[WEBHOOK] rejected payload with invalid signature')
-            return 'Forbidden', 403
     data = request.get_json(silent=True) or {}
 
     # Log every payload so you can debug via Flask console
@@ -67,33 +54,6 @@ def receive():
                     for c in value.get('contacts', [])
                     if c.get('wa_id')
                 }
-
-                # Calls use the same verified endpoint but a different
-                # webhook field/value shape. Never print SDP: it contains
-                # ephemeral ICE/DTLS session material and can be very large.
-                if change.get('field') == 'calls':
-                    if not CALLING_ENABLED:
-                        print(f'[calls] ignored event because WHATSAPP_CALLING_ENABLED is false phone_number_id={phone_number_id}')
-                        continue
-                    if CALLING_PHONE_NUMBER_ID and phone_number_id != CALLING_PHONE_NUMBER_ID:
-                        print(f'[calls] ignored event outside Shortcut call scope phone_number_id={phone_number_id}')
-                        continue
-                    for call in value.get('calls', []):
-                        event = call.get('event', 'unknown')
-                        call_id = call.get('id', '')
-                        direction = call.get('direction', '')
-                        print(f'[calls] webhook event={event} call_id={call_id} direction={direction} from={call.get("from", "")}')
-                        save_call_event(user_id, phone_number_id, call, profile_names)
-                    for status_event in value.get('statuses', []):
-                        if status_event.get('type') != 'call':
-                            continue
-                        call = {'id': status_event.get('id', ''), 'event': 'status',
-                                'status': status_event.get('status', ''),
-                                'from': status_event.get('recipient_id', ''),
-                                'direction': status_event.get('direction', 'USER_INITIATED')}
-                        print(f'[calls] webhook status={call["status"]} call_id={call["id"]}')
-                        save_call_event(user_id, phone_number_id, call, profile_names)
-                    continue
 
                 # ── Incoming messages (customer → business) ──────────────
                 for msg in value.get('messages', []):
