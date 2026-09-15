@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify
 from db import get_conn, put_conn
 from routes.push import send_push_to_user
-from routes.calls import save_call_event, CALLING_ENABLED, CALLING_PHONE_NUMBER_ID
+from routes.calls import save_call_event, save_call_permission, CALLING_ENABLED, CALLING_PHONE_NUMBER_ID
 import os
 import json
 import threading
@@ -100,6 +100,16 @@ def receive():
                     from_phone = msg.get('from', '')
                     wamid      = msg.get('id', '')
                     msg_type   = msg.get('type', 'text')
+
+                    # Calling permission replies are normal interactive
+                    # message webhooks, not `calls` webhooks. In particular,
+                    # callback permission arrives here after a customer call.
+                    interactive = msg.get('interactive') or {}
+                    permission_reply = interactive.get('call_permission_reply') or {}
+                    if msg_type == 'interactive' and interactive.get('type') == 'call_permission_reply':
+                        save_call_permission(user_id, phone_number_id, from_phone, permission_reply,
+                                             (msg.get('context') or {}).get('id', ''))
+                        continue
 
                     if msg_type == 'reaction':
                         # Not a chat message — attaches to (or clears, if emoji
