@@ -52,7 +52,7 @@ def subscribe():
         put_conn(conn)
 
 
-def send_push_to_user(user_id, title, body, url='/replies'):
+def send_push_to_user(user_id, title, body, url='/replies', push_type='message', call_id=''):
     """
     Send a Web Push notification to every device/browser this user has
     subscribed on. Silently no-ops if VAPID keys aren't configured, or if the
@@ -73,7 +73,10 @@ def send_push_to_user(user_id, title, body, url='/replies'):
     finally:
         put_conn(conn)
 
-    payload = json.dumps({'title': title, 'body': body, 'url': url})
+    payload = json.dumps({
+        'title': title, 'body': body, 'url': url,
+        'type': push_type, 'call_id': call_id,
+    })
 
     for sub_id, endpoint, p256dh, auth in subs:
         try:

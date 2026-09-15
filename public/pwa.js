@@ -139,6 +139,7 @@ async function enablePush() {
     if (!sub) {
       const keyRes = await fetch('/api/push/vapid-public-key');
       const { key } = await keyRes.json();
+      if (!key) throw new Error('Push is not configured on this server yet.');
       sub = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(key),

@@ -183,6 +183,8 @@ def init_db():
                 direction VARCHAR(30),
                 event VARCHAR(30),
                 status VARCHAR(50) DEFAULT 'incoming',
+                claimed_by VARCHAR(80),
+                claimed_at TIMESTAMP,
                 offer_sdp TEXT,
                 answer_sdp TEXT,
                 started_at TIMESTAMP,
@@ -197,6 +199,11 @@ def init_db():
         # Defaults existing rows to read so old history doesn't suddenly
         # appear unread; new incoming rows explicitly set FALSE at insert time.
         cur.execute("ALTER TABLE replies ADD COLUMN IF NOT EXISTS is_read BOOLEAN DEFAULT TRUE;")
+        # A claim belongs to one browser agent, rather than the whole account.
+        # This makes accepting a call an atomic database operation when two
+        # signed-in agents receive the same Web Push notification.
+        cur.execute("ALTER TABLE whatsapp_calls ADD COLUMN IF NOT EXISTS claimed_by VARCHAR(80);")
+        cur.execute("ALTER TABLE whatsapp_calls ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMP;")
         # Normalize early Calling API action labels written by pre-release
         # builds, so stale rejected/ended calls never keep ringing in Replies.
         cur.execute("""UPDATE whatsapp_calls SET status = CASE status
