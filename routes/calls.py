@@ -47,11 +47,6 @@ def save_call_event(user_id, phone_number_id, call, profile_names=None):
         return
     event = (call.get('event') or '').lower()
     status = (call.get('status') or event or 'incoming').upper()
-    # A terminate webhook is sometimes delivered without a separate terminal
-    # status. Keep one canonical terminal value so the agent UI immediately
-    # stops ringing instead of treating literal "TERMINATE" as an active call.
-    if event == 'terminate':
-        status = 'TERMINATED'
     caller = (call.get('from') or call.get('caller') or '').strip()
     session_data = call.get('session') or {}
     offer = session_data.get('sdp') if event == 'connect' and session_data.get('sdp_type') == 'offer' else None
