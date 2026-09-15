@@ -195,6 +195,19 @@ def init_db():
             CREATE INDEX IF NOT EXISTS whatsapp_calls_user_status_idx
                 ON whatsapp_calls (user_id, status, updated_at DESC);
 
+            CREATE TABLE IF NOT EXISTS whatsapp_call_permissions (
+                user_id INTEGER REFERENCES users(id) NOT NULL,
+                phone_number_id VARCHAR(100) NOT NULL,
+                customer_phone VARCHAR(20) NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                response_source VARCHAR(30),
+                is_permanent BOOLEAN DEFAULT FALSE,
+                expires_at TIMESTAMP,
+                context_id VARCHAR(255),
+                updated_at TIMESTAMP DEFAULT NOW(),
+                PRIMARY KEY (user_id, phone_number_id, customer_phone)
+            );
+
         """)
         # Defaults existing rows to read so old history doesn't suddenly
         # appear unread; new incoming rows explicitly set FALSE at insert time.
