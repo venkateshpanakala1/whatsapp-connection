@@ -1,5 +1,3 @@
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -10,15 +8,6 @@ android {
     namespace = "app.whatsappconnection"
     compileSdk = 35
 
-    buildFeatures {
-        buildConfig = true
-    }
-
-    compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
-    }
-
     defaultConfig {
         applicationId = "app.whatsappconnection"
         minSdk = 26
@@ -26,13 +15,6 @@ android {
         versionCode = 1
         versionName = "1.0.0"
         buildConfigField("String", "BACKEND_BASE_URL", "\"https://web-production-dd3a3.up.railway.app\"")
-    }
-}
-
-kotlin {
-    jvmToolchain(17)
-    compilerOptions {
-        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
