@@ -58,7 +58,7 @@ self.addEventListener('push', (event) => {
       // If the app happens to be open, tell it to refresh immediately
       // instead of waiting for its next poll tick.
       self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-        clients.forEach((client) => client.postMessage({ type: data.url?.startsWith('/replies?call=') ? 'incoming-call' : 'new-reply' }));
+        clients.forEach((client) => client.postMessage({ type: 'new-reply' }));
       }),
     ])
   );
