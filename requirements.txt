@@ -6,6 +6,3 @@ python-dotenv
 openpyxl
 gunicorn
 pywebpush
-google-api-python-client
-google-auth
-google-auth-oauthlib

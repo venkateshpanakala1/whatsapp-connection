@@ -91,35 +91,6 @@
     </div>
     <div id="tenants-list"><div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div></div>
   </div>
-  <div class="card card-wide">
-    <div class="card-hdr">
-      <div>
-        <div class="card-title">Bulk Email</div>
-        <div class="hint" style="margin:5px 0 0">Send an individual email to every address in a CSV or Excel file.</div>
-      </div>
-      <button class="btn btn-outline btn-sm" onclick="connectGmail()">Connect Gmail</button>
-    </div>
-    <div class="form-group">
-      <label>Recipient file</label>
-      <div class="upload-zone" id="email-upload-zone" onclick="document.getElementById('email-file').click()" ondragover="emailDragOver(event)" ondragleave="emailDragLeave()" ondrop="emailDrop(event)">
-        <input id="email-file" type="file" accept=".csv,.xlsx" onchange="emailFileSelected(this.files[0])">
-        <div class="upload-icon-big">Email</div>
-        <div class="upload-ttl">Drop a recipient file here or browse</div>
-        <div class="upload-desc">CSV or Excel (.xlsx), up to 500 unique email addresses</div>
-      </div>
-      <p class="hint" id="email-file-name" style="display:none"></p>
-    </div>
-    <div class="form-group">
-      <label>Subject</label>
-      <input type="text" id="bulk-email-subject" maxlength="200" placeholder="Email subject" />
-    </div>
-    <div class="form-group">
-      <label>Message</label>
-      <textarea id="bulk-email-body" maxlength="20000" rows="7" placeholder="Write your email message..."></textarea>
-    </div>
-    <button class="btn btn-primary btn-lg btn-full" id="bulk-email-btn" onclick="sendBulkEmail()">Send Bulk Email</button>
-    <div class="alert" id="bulk-email-alert"></div>
-  </div>
 </div>
 
 <!-- Delete confirmation modal -->
@@ -268,76 +239,6 @@
       });
     } catch (e) {}
     window.location.href = '/login';
-  }
-
-  let emailFile = null;
-
-  function emailDragOver(e) {
-    e.preventDefault();
-    document.getElementById('email-upload-zone').classList.add('drag-over');
-  }
-  function emailDragLeave() { document.getElementById('email-upload-zone').classList.remove('drag-over'); }
-  function emailDrop(e) {
-    e.preventDefault(); emailDragLeave();
-    emailFileSelected(e.dataTransfer.files[0]);
-  }
-  function emailFileSelected(file) {
-    if (!file) return;
-    if (!/\.(csv|xlsx)$/i.test(file.name)) {
-      showAlert('bulk-email-alert', 'error', 'Only CSV and Excel (.xlsx) files are supported.');
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      showAlert('bulk-email-alert', 'error', 'The file must be 5 MB or smaller.');
-      return;
-    }
-    emailFile = file;
-    const label = document.getElementById('email-file-name');
-    label.textContent = `Selected: ${file.name}`;
-    label.style.display = 'block';
-    hideAlert('bulk-email-alert');
-  }
-
-  async function sendBulkEmail() {
-    const subject = document.getElementById('bulk-email-subject').value.trim();
-    const body = document.getElementById('bulk-email-body').value.trim();
-    if (!emailFile || !subject || !body) {
-      return showAlert('bulk-email-alert', 'error', 'Choose a file, enter a subject, and write a message.');
-    }
-    if (!confirm(`Send this email to every address in ${emailFile.name}?`)) return;
-    const btn = document.getElementById('bulk-email-btn');
-    btn.disabled = true; btn.textContent = 'Sending...'; hideAlert('bulk-email-alert');
-    const form = new FormData();
-    form.append('file', emailFile); form.append('subject', subject); form.append('body', body);
-    try {
-      const res = await fetch('/api/admin-email/send-bulk', { method: 'POST', body: form, credentials: 'same-origin' });
-      if (res.status === 401) { window.location.href = '/login'; return; }
-      const data = await res.json();
-      if (data.success) {
-        let message = data.message;
-        if (data.failed) message += ` ${data.failed} failed.`;
-        showAlert('bulk-email-alert', 'success', message);
-      } else {
-        showAlert('bulk-email-alert', 'error', data.error || data.message || 'No emails were sent.');
-      }
-    } catch (e) {
-      showAlert('bulk-email-alert', 'error', 'Server error: ' + e.message);
-    } finally {
-      btn.disabled = false; btn.textContent = 'Send Bulk Email';
-    }
-  }
-
-  function connectGmail() {
-    window.location.href = '/api/admin-email/oauth/start';
-  }
-
-  const pageParams = new URLSearchParams(window.location.search);
-  if (pageParams.get('gmail_connected')) {
-    showAlert('bulk-email-alert', 'success', 'Gmail connected successfully. You can now send bulk email.');
-    history.replaceState({}, '', '/admin');
-  } else if (pageParams.get('gmail_error')) {
-    showAlert('bulk-email-alert', 'error', 'Could not connect Gmail. Check your OAuth settings and try again.');
-    history.replaceState({}, '', '/admin');
   }
 
   loadTenants();
