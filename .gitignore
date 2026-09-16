@@ -1,0 +1,8 @@
+.env
+credentials.json
+google-credentials.json
+client_secret*.json
+*service-account*.json
+gmail-oauth-token.json
+__pycache__/
+*.py[cod]
