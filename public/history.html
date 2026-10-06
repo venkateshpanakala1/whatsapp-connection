@@ -75,7 +75,7 @@
       <div class="progress-wrap">
         <div class="progress-bar" id="an-rate-bar" style="width:0%"></div>
       </div>
-      <button class="btn btn-outline btn-sm" id="an-recipients-toggle" type="button" onclick="toggleRecipients()" style="margin-top:12px">👉 Click to view delivery status</button>
+      <button class="btn btn-outline btn-sm" id="an-recipients-toggle" type="button" onclick="toggleRecipients()" style="margin-top:12px">✅</button>
       <div id="an-recipients" style="display:none;margin-top:10px"></div>
 
       <div class="stat-grid" style="margin-top:20px;margin-bottom:6px">
@@ -251,7 +251,7 @@
     panel.style.display = recipientsVisible ? 'block' : 'none';
     button.textContent = recipientsVisible
       ? 'Hide delivery details'
-      : `👉 Click to view delivery status for ${button.dataset.count || 0} number${button.dataset.count === '1' ? '' : 's'}`;
+      : `✅`;
     if (!recipientsVisible) return;
 
     panel.innerHTML = '<div class="empty-sub">Loading delivery statuses...</div>';
@@ -278,7 +278,7 @@
     const recipientButton = document.getElementById('an-recipients-toggle');
     recipientButton.dataset.count = j.sent || 0;
     const sentCount = j.sent || 0;
-    recipientButton.textContent = `👉 Click to view delivery status for ${sentCount.toLocaleString()} number${sentCount === 1 ? '' : 's'}`;
+    recipientButton.textContent = `✅`;
     document.getElementById('an-recipients').style.display = 'none';
     document.getElementById('an-recipients').innerHTML = '';
 
