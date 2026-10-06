@@ -540,7 +540,7 @@ def send_history_recipients(job_id):
             'success': True,
             'recipients': [
                 {'phone': row[0] or '', 'name': row[1] or '',
-                 'delivery_status': 'Delivered' if row[2] else 'Sent'}
+                 'delivery_status': 'Delivered' if row[2] else 'Not delivered'}
                 for row in rows
             ]
         })
