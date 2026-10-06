@@ -515,6 +515,41 @@ def delete_history_job(job_id):
         put_conn(conn)
 
 
+# GET /api/send/history/<job_id>/recipients
+# Tenant-scoped delivery details, loaded only when requested from analytics.
+@send_bp.route('/history/<job_id>/recipients', methods=['GET'])
+def send_history_recipients(job_id):
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT sl.phone, sl.name, sl.delivered_at
+            FROM send_logs sl
+            JOIN send_jobs sj ON sj.id = sl.job_id
+            WHERE sl.job_id = %s AND sl.user_id = %s AND sj.user_id = %s
+              AND sl.status = 'sent'
+            ORDER BY sl.id ASC
+        """, (job_id, user_id, user_id))
+        rows = cur.fetchall()
+        cur.close()
+        return jsonify({
+            'success': True,
+            'recipients': [
+                {'phone': row[0] or '', 'name': row[1] or '',
+                 'delivery_status': 'Delivered' if row[2] else 'Sent'}
+                for row in rows
+            ]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        put_conn(conn)
+
+
 # GET /api/send/history  — every past bulk-send run for this user, with
 # delivered/read/replied engagement counts alongside the raw sent/failed
 # ones. Not capped — the frontend paginates the full list itself (see
