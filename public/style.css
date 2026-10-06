@@ -727,9 +727,7 @@ tbody tr:hover td { background: rgba(37,211,102,0.08); }
    pwa.js enforces this with a redirect; this just hides the nav
    links to the other screens so there's nothing to tap toward. ── */
 @media (display-mode: standalone) {
-  /* .nav-item, not a.nav-item — a disabled item (Find Names) renders as a
-     <span>, not an <a>, so the old a-only selector would have missed it
-     and left it visible in the installed app's Replies-only view. */
+  /* Hide every app navigation item except Replies in the installed app. */
   .sidebar-nav .nav-item:not([href="/replies"]) { display: none; }
   .nav-label { display: none; }
 }
