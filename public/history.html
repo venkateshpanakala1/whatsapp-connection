@@ -70,12 +70,14 @@
 
       <div class="prog-stats">
         <span>Success rate</span>
-        <span id="an-rate" style="font-weight:700;color:var(--text)"></span>
+        <span style="display:flex;align-items:center;gap:6px;font-weight:700;color:var(--text)">
+          <span id="an-rate"></span>
+          <button class="btn btn-sm" id="an-recipients-toggle" type="button" onclick="toggleRecipients()" aria-label="Show delivery details" title="Show delivery details" style="padding:0 2px;font-size:16px">✅</button>
+        </span>
       </div>
       <div class="progress-wrap">
         <div class="progress-bar" id="an-rate-bar" style="width:0%"></div>
       </div>
-      <button class="btn btn-outline btn-sm" id="an-recipients-toggle" type="button" onclick="toggleRecipients()" style="margin-top:12px">✅</button>
       <div id="an-recipients" style="display:none;margin-top:10px"></div>
 
       <div class="stat-grid" style="margin-top:20px;margin-bottom:6px">
@@ -249,9 +251,9 @@
     const button = document.getElementById('an-recipients-toggle');
     recipientsVisible = !recipientsVisible;
     panel.style.display = recipientsVisible ? 'block' : 'none';
-    button.textContent = recipientsVisible
-      ? 'Hide delivery details'
-      : `✅`;
+    button.textContent = '✅';
+    button.setAttribute('aria-label', recipientsVisible ? 'Hide delivery details' : 'Show delivery details');
+    button.title = recipientsVisible ? 'Hide delivery details' : 'Show delivery details';
     if (!recipientsVisible) return;
 
     panel.innerHTML = '<div class="empty-sub">Loading delivery statuses...</div>';
@@ -278,7 +280,9 @@
     const recipientButton = document.getElementById('an-recipients-toggle');
     recipientButton.dataset.count = j.sent || 0;
     const sentCount = j.sent || 0;
-    recipientButton.textContent = `✅`;
+    recipientButton.textContent = '✅';
+    recipientButton.setAttribute('aria-label', `Show delivery details for ${sentCount.toLocaleString()} numbers`);
+    recipientButton.title = `Show delivery details for ${sentCount.toLocaleString()} numbers`;
     document.getElementById('an-recipients').style.display = 'none';
     document.getElementById('an-recipients').innerHTML = '';
 
