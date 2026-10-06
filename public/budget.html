@@ -205,18 +205,6 @@
     return `<div class="budget-chart-wrap"><div class="budget-chart">${cols}</div></div>`;
   }
 
-  function renderTable(days, currency) {
-    const categoriesPresent = CATEGORY_ORDER.filter(cat => days.some(d => d.by_category[cat]));
-    const header = `<th>Date</th>${categoriesPresent.map(cat => `<th>${esc(CATEGORY_META[cat]?.label || cat)}</th>`).join('')}<th>Total</th>`;
-    const rows = days.slice().reverse().map(d => `
-      <tr>
-        <td>${formatDateLabel(d.date)}</td>
-        ${categoriesPresent.map(cat => `<td>${d.by_category[cat] ? formatMoney(d.by_category[cat], currency) : '—'}</td>`).join('')}
-        <td style="font-weight:700">${formatMoney(d.total_cost, currency)}</td>
-      </tr>`).join('');
-    return `<div class="table-wrap"><table><thead><tr>${header}</tr></thead><tbody>${rows}</tbody></table></div>`;
-  }
-
   async function loadBudget() {
     const body = document.getElementById('budget-body');
     body.innerHTML = '<div class="empty-state"><div class="empty-icon">⏳</div><div class="empty-text">Loading...</div></div>';
@@ -241,32 +229,10 @@
       }
 
       const categoriesPresent = CATEGORY_ORDER.filter(cat => data.days.some(d => d.by_category[cat]));
-      const activeDays = data.days.length;
-      const avgPerDay = data.grand_total / activeDays;
 
       body.innerHTML = `
-        <div class="stat-grid" style="margin-bottom:6px">
-          <div class="stat-card s-spend">
-            <div class="stat-num">${formatMoney(data.grand_total, data.currency)}</div>
-            <div class="stat-lbl">Total Spend</div>
-            <div class="stat-sub">Total Meta billed you in this range</div>
-          </div>
-          <div class="stat-card s-msgs">
-            <div class="stat-num">${(data.bulk_sent_count || 0).toLocaleString()}</div>
-            <div class="stat-lbl">Bulk Send Messages</div>
-            <div class="stat-sub">Messages sent via your Bulk Send runs in this range</div>
-          </div>
-          <div class="stat-card s-avg">
-            <div class="stat-num">${formatMoney(avgPerDay, data.currency)}</div>
-            <div class="stat-lbl">Avg / Day</div>
-            <div class="stat-sub">Averaged over the ${activeDays} day${activeDays !== 1 ? 's' : ''} with recorded activity</div>
-          </div>
-        </div>
-        <div class="budget-stat-note" style="margin-top:20px">Total Spend and Avg / Day come directly from Meta's own billing analytics; Bulk Send Messages comes from your own send history.</div>
         ${renderLegend(categoriesPresent)}
         ${renderChart(data.days, data.currency)}
-        <div class="card-title" style="margin:22px 0 12px">Day-by-day breakdown</div>
-        ${renderTable(data.days, data.currency)}
       `;
     } catch (e) {
       body.innerHTML = `<div class="empty-state"><div class="empty-text">Error: ${esc(e.message)}</div></div>`;

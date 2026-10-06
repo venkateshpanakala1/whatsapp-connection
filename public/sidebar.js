@@ -21,11 +21,6 @@
     { href: '/send',      icon: '📤', label: 'Bulk Send' },
     { href: '/history',   icon: '📊', label: 'History' },
     { href: '/budget',    icon: '💰', label: 'Budget' },
-    // Find Names is disabled — shown in the nav so it's visible, but
-    // dimmed and unclickable (rendered as a <span>, not a link). The page
-    // and its backend still work fine at /name-finder if linked to
-    // directly; re-enable it by just removing `disabled: true` below.
-    { href: '/name-finder', icon: '🔎', label: 'Find Names', disabled: true },
     { href: '/replies',   icon: '💬', label: 'Replies' },
   ];
 
