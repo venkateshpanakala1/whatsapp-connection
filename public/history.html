@@ -68,12 +68,11 @@
         </div>
       </div>
 
-      <div class="prog-stats">
-        <span>Success rate</span>
-        <span style="display:flex;align-items:center;gap:6px;font-weight:700;color:var(--text)">
-          <span id="an-rate"></span>
-          <button class="btn btn-sm" id="an-recipients-toggle" type="button" onclick="toggleRecipients()" aria-label="Show delivery details" title="Show delivery details" style="padding:0 2px;font-size:16px">✅</button>
-        </span>
+      <div style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-2);margin-bottom:8px">
+        <span>Success rate <strong id="an-rate" style="color:var(--text)"></strong></span>
+        <button id="an-recipients-toggle" type="button" onclick="toggleRecipients()" aria-label="Show delivery details" title="Show delivery details" style="display:inline-flex;align-items:center;padding:0;border:0;background:transparent;cursor:pointer;line-height:0">
+          <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><rect x="1" y="1" width="18" height="18" rx="4" fill="#22c55e"/><path d="m5 10 3.2 3.2L15 6.8" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
       </div>
       <div class="progress-wrap">
         <div class="progress-bar" id="an-rate-bar" style="width:0%"></div>
@@ -251,7 +250,6 @@
     const button = document.getElementById('an-recipients-toggle');
     recipientsVisible = !recipientsVisible;
     panel.style.display = recipientsVisible ? 'block' : 'none';
-    button.textContent = '✅';
     button.setAttribute('aria-label', recipientsVisible ? 'Hide delivery details' : 'Show delivery details');
     button.title = recipientsVisible ? 'Hide delivery details' : 'Show delivery details';
     if (!recipientsVisible) return;
@@ -280,7 +278,6 @@
     const recipientButton = document.getElementById('an-recipients-toggle');
     recipientButton.dataset.count = j.sent || 0;
     const sentCount = j.sent || 0;
-    recipientButton.textContent = '✅';
     recipientButton.setAttribute('aria-label', `Show delivery details for ${sentCount.toLocaleString()} numbers`);
     recipientButton.title = `Show delivery details for ${sentCount.toLocaleString()} numbers`;
     document.getElementById('an-recipients').style.display = 'none';
