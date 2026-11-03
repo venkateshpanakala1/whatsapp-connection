@@ -259,12 +259,9 @@
       const res = await fetch(`${API}/history/${encodeURIComponent(activeAnalyticsJobId)}/recipients`);
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Could not load delivery statuses');
-      if (!data.recipients.length) {
-        panel.innerHTML = '<div class="empty-sub">No sent phone numbers for this run.</div>';
-        return;
-      }
-      panel.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Phone No</th><th>Name</th><th>Delivery status</th></tr></thead><tbody>${data.recipients.map(r => `
-        <tr><td>${esc(r.phone)}</td><td>${esc(r.name || '—')}</td><td>${esc(r.delivery_status)}</td></tr>`).join('')}</tbody></table></div>`;
+      panel.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Numbers</th><th>Delivered</th><th>Not delivered</th></tr></thead><tbody>
+        <tr><td>${Number(data.numbers || 0).toLocaleString()}</td><td>${Number(data.delivered || 0).toLocaleString()}</td><td>${Number(data.not_delivered || 0).toLocaleString()}</td></tr>
+      </tbody></table></div>`;
     } catch (e) {
       panel.innerHTML = `<div class="empty-sub">${esc(e.message)}</div>`;
     }

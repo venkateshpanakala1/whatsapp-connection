@@ -527,22 +527,22 @@ def send_history_recipients(job_id):
     try:
         cur = conn.cursor()
         cur.execute("""
-            SELECT sl.phone, sl.name, sl.delivered_at
+            SELECT
+                COUNT(*) AS numbers,
+                COUNT(*) FILTER (WHERE sl.delivered_at IS NOT NULL) AS delivered,
+                COUNT(*) FILTER (WHERE sl.delivered_at IS NULL) AS not_delivered
             FROM send_logs sl
             JOIN send_jobs sj ON sj.id = sl.job_id
             WHERE sl.job_id = %s AND sl.user_id = %s AND sj.user_id = %s
               AND sl.status = 'sent'
-            ORDER BY sl.id ASC
         """, (job_id, user_id, user_id))
-        rows = cur.fetchall()
+        row = cur.fetchone()
         cur.close()
         return jsonify({
             'success': True,
-            'recipients': [
-                {'phone': row[0] or '', 'name': row[1] or '',
-                 'delivery_status': 'Delivered' if row[2] else 'Not delivered'}
-                for row in rows
-            ]
+            'numbers': row[0] or 0,
+            'delivered': row[1] or 0,
+            'not_delivered': row[2] or 0,
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
