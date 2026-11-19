@@ -65,7 +65,7 @@ def parse_rows(rows):
                 # spreadsheet label. The phone value is already stored in
                 # contacts.phone, so do not duplicate it in extra_data.
                 fields[header] = value
-            contacts.append({'phone': phone,  'fields': fields})
+            contacts.append({'phone': phone, 'name': name, 'fields': fields})
 
     return contacts
 
