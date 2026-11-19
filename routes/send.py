@@ -33,12 +33,12 @@ def get_contacts_by_file(source_file, user_id):
     try:
         cur = conn.cursor()
         cur.execute(
-            'SELECT phone, name FROM contacts WHERE user_id = %s AND source_file = %s ORDER BY id ASC',
+            'SELECT phone, name, data FROM contacts WHERE user_id = %s AND source_file = %s ORDER BY id ASC',
             (user_id, source_file)
         )
         rows = cur.fetchall()
         cur.close()
-        return [{'phone': r[0], 'name': r[1] or ''} for r in rows]
+        return [{'phone': r[0], 'name': r[1] or '', 'data': r[2] or {}} for r in rows]
     finally:
         put_conn(conn)
 
@@ -207,7 +207,9 @@ def build_template_components(header_format, header_media_url, header_filename, 
     if body_params:
         parameters = []
         for val in body_params:
-            if val == '{{name}}':
+            if isinstance(val, dict) and val.get('column'):
+                resolved = (contact.get('data') or {}).get(val['column'], '')
+            elif val == '{{name}}':
                 resolved = contact.get('name') or contact['phone']
             elif val == '{{phone}}':
                 resolved = contact['phone']

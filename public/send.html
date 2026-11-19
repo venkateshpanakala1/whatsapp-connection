@@ -271,9 +271,10 @@
   function onFileChange() {
     const val  = document.getElementById('file-select').value;
     const info = document.getElementById('file-info');
-    if (!val) { info.classList.remove('show'); checkReady(); return; }
+    if (!val) { info.classList.remove('show'); renderDynamicParams(); checkReady(); return; }
     const f = filesData.find(x => x.file === val);
     if (f) { info.innerHTML = `<strong>${f.count}</strong> contacts will receive the message`; info.classList.add('show'); }
+    renderDynamicParams();
     checkReady();
   }
 
@@ -298,7 +299,10 @@
     }
     if (varCount) {
       data.bodyParams = [];
-      for (let i = 1; i <= varCount; i++) data.bodyParams.push(document.getElementById(`body-param-${i}`)?.value.trim() || '');
+      for (let i = 1; i <= varCount; i++) data.bodyParams.push({
+        value: document.getElementById(`body-param-${i}`)?.value.trim() || '',
+        column: document.getElementById(`body-column-${i}`)?.value || ''
+      });
     }
     localStorage.setItem(tplStorageKey(currentTemplateName), JSON.stringify(data));
   }
@@ -376,12 +380,21 @@
       }
     }
     for (let i = 1; i <= varCount; i++) {
-      const savedVal = saved.bodyParams?.[i - 1] || '';
+      const savedParam = saved.bodyParams?.[i - 1] || '';
+      const savedVal = typeof savedParam === 'object' ? (savedParam.value || '') : savedParam;
+      const savedColumn = typeof savedParam === 'object' ? (savedParam.column || '') : '';
+      const selectedFile = filesData.find(f => f.file === document.getElementById('file-select').value);
+      const columnOptions = (selectedFile?.columns || []).map(col =>
+        `<option value="column:${encodeURIComponent(col)}" ${col === savedColumn ? 'selected' : ''}>${esc(col)}</option>`
+      ).join('');
       html += `
         <div class="form-group">
           <label>Body Variable {{${i}}}</label>
           <input type="text" id="body-param-${i}" placeholder="Fixed text, or {{name}} / {{phone}}" value="${esc(savedVal)}" oninput="onParamInput()" />
-          <p class="hint">Use <strong>{{name}}</strong> or <strong>{{phone}}</strong> to insert each contact's own value, or type fixed text sent to everyone.</p>
+          <select id="body-column-${i}" onchange="onParamInput()" style="margin-top:8px">
+            <option value="">Use the fixed value above</option>${columnOptions}
+          </select>
+          <p class="hint">Or choose a spreadsheet column to insert that row's value for each contact.</p>
         </div>`;
     }
     wrap.innerHTML = html;
@@ -403,7 +416,8 @@
     }
     if (ready && varCount) {
       for (let i = 1; i <= varCount; i++) {
-        if (!document.getElementById(`body-param-${i}`)?.value.trim()) { ready = false; break; }
+        const column = document.getElementById(`body-column-${i}`)?.value || '';
+        if (!column && !document.getElementById(`body-param-${i}`)?.value.trim()) { ready = false; break; }
       }
     }
     document.getElementById('run-btn').disabled = !ready;
@@ -419,7 +433,12 @@
     const header_media_url = headerFormat ? document.getElementById('header-media-url').value.trim() : '';
     const header_filename  = headerFormat === 'DOCUMENT' ? document.getElementById('header-filename').value.trim() : '';
     const body_params = [];
-    for (let i = 1; i <= varCount; i++) body_params.push(document.getElementById(`body-param-${i}`).value.trim());
+    for (let i = 1; i <= varCount; i++) {
+      const columnChoice = document.getElementById(`body-column-${i}`).value;
+      body_params.push(columnChoice.startsWith('column:')
+        ? { column: decodeURIComponent(columnChoice.slice(7)) }
+        : document.getElementById(`body-param-${i}`).value.trim());
+    }
 
     document.getElementById('run-btn').disabled    = true;
     document.getElementById('run-btn').textContent = '⏳ Starting...';

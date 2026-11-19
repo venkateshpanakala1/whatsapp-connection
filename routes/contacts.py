@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, session
 import csv
 import io
+import json
 from db import get_conn, put_conn
 
 contacts_bp = Blueprint('contacts', __name__)
@@ -52,7 +53,15 @@ def parse_rows(rows):
         phone = clean_phone(r[phone_idx] if phone_idx < len(r) else '')
         name  = str(r[name_idx]).strip() if name_idx is not None and name_idx < len(r) else ''
         if phone:
-            contacts.append({'phone': phone, 'name': name})
+            # Retain every spreadsheet column so Bulk Send can map template
+            # variables to a different value for each row/contact.
+            values = {}
+            if phone_col_hit:
+                headers = [str(c).strip() for c in rows[0]]
+                for idx, header in enumerate(headers):
+                    if header and idx < len(r):
+                        values[header] = str(r[idx]).strip()
+            contacts.append({'phone': phone, 'name': name, 'data': values})
 
     return contacts
 
@@ -109,11 +118,11 @@ def import_contacts():
             if not phone:
                 continue
             cur.execute("""
-                INSERT INTO contacts (user_id, name, phone, source_file)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO contacts (user_id, name, phone, source_file, data)
+                VALUES (%s, %s, %s, %s, %s::jsonb)
                 ON CONFLICT (user_id, phone, source_file) DO UPDATE
-                    SET name = EXCLUDED.name, updated_at = NOW()
-            """, (user_id, name, phone, source_file))
+                    SET name = EXCLUDED.name, data = EXCLUDED.data, updated_at = NOW()
+            """, (user_id, name, phone, source_file, json.dumps(c.get('data') or {})))
             saved += 1
         conn.commit()
         cur.close()
@@ -133,17 +142,20 @@ def list_files():
     try:
         cur = conn.cursor()
         cur.execute("""
-            SELECT source_file, COUNT(*) as cnt, MAX(created_at) as imported_at
+            SELECT source_file, COUNT(*) as cnt, MAX(created_at) as imported_at,
+                   ARRAY(SELECT DISTINCT jsonb_object_keys(COALESCE(c2.data, '{}'::jsonb))
+                         FROM contacts c2
+                         WHERE c2.user_id = %s AND c2.source_file = contacts.source_file) AS columns
             FROM contacts WHERE user_id = %s
             GROUP BY source_file
             ORDER BY MAX(created_at) DESC
-        """, (user_id,))
+        """, (user_id, user_id))
         rows = cur.fetchall()
         cur.close()
         files = [
             # Naive TIMESTAMP columns are written in UTC (Postgres's NOW()) —
             # mark it so the browser converts to local time/date correctly.
-            {'file': r[0], 'count': r[1], 'imported_at': (r[2].isoformat() + 'Z') if r[2] else ''}
+            {'file': r[0], 'count': r[1], 'imported_at': (r[2].isoformat() + 'Z') if r[2] else '', 'columns': r[3] or []}
             for r in rows
         ]
         return jsonify({'success': True, 'files': files})
