@@ -3,7 +3,6 @@ import requests as http
 from db import get_conn, put_conn
 import secrets
 import json
-import re
 from urllib.parse import urlparse
 
 templates_bp = Blueprint('templates', __name__)
@@ -233,35 +232,16 @@ def create_template():
         category      = body.get('category', 'MARKETING')
         language      = body.get('language', 'en')
         header_type   = body.get('header_type', 'NONE')   # NONE / IMAGE / VIDEO / DOCUMENT
-        header_handle = str(body.get('header_handle') or '').strip()
+        header_handle = body.get('header_handle', '')
         body_text     = (body.get('body_text') or '').strip()
         footer_text   = (body.get('footer_text') or '').strip()
 
         if not name or not body_text:
             return jsonify({'error': 'Template name and body text are required'}), 400
-        if header_type in ('IMAGE', 'VIDEO', 'DOCUMENT') and not header_handle:
-            return jsonify({'error': f'A {header_type.lower()} header requires an uploaded file'}), 400
-        if header_type in ('IMAGE', 'VIDEO', 'DOCUMENT') and ('\n' in header_handle or '\r' in header_handle):
-            return jsonify({'error': 'The uploaded media handle is malformed. Remove the file and upload it again.'}), 400
         try:
             website_buttons = parse_website_buttons(body)
         except ValueError as e:
             return jsonify({'error': str(e)}), 400
-
-        # WhatsApp requires example values for every numbered BODY variable
-        # when a template is submitted. Keep examples in numeric placeholder
-        # order, regardless of the order they first appear in the text.
-        variable_numbers = sorted({int(n) for n in re.findall(r'\{\{(\d+)\}\}', body_text)})
-        if variable_numbers and variable_numbers != list(range(1, max(variable_numbers) + 1)):
-            return jsonify({'error': 'Body variables must be numbered consecutively from {{1}}'}), 400
-        examples = body.get('body_examples') or []
-        if len(examples) != len(variable_numbers):
-            examples = [f'Example {n}' for n in variable_numbers]
-        examples = [str(value).strip() or f'Example {i + 1}' for i, value in enumerate(examples)]
-
-        # The editor accepts common Markdown double-star bold; WhatsApp uses
-        # a single * on each side, so convert that notation before submission.
-        body_text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', body_text, flags=re.DOTALL)
 
         # Build Meta API payload
         components = []
@@ -273,10 +253,7 @@ def create_template():
                 'example': {'header_handle': [header_handle]}
             })
 
-        body_component = {'type': 'BODY', 'text': body_text}
-        if variable_numbers:
-            body_component['example'] = {'body_text': [examples]}
-        components.append(body_component)
+        components.append({'type': 'BODY', 'text': body_text})
 
         if footer_text:
             components.append({'type': 'FOOTER', 'text': footer_text})
@@ -305,12 +282,7 @@ def create_template():
         )
         data = res.json()
         if 'error' in data:
-            err = data['error']
-            detail = err.get('error_user_msg') or (err.get('error_data') or {}).get('details') or err.get('message') or 'Meta rejected the template'
-            print(f'[templates] create failed for name={name}: {err}')
-            return jsonify({'error': detail, 'meta_error': {
-                'code': err.get('code'), 'subcode': err.get('error_subcode')
-            }}), 400
+            return jsonify({'error': data['error']['message']}), 400
 
         # Save to local DB
         conn = get_conn()
