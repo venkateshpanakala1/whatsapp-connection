@@ -212,6 +212,7 @@
           <textarea id="tpl-body" placeholder="Hello {{1}}, your order {{2}} is confirmed!" oninput="updateCharCount()"></textarea>
           <div class="char-count" id="char-count">0 / 1024</div>
           <p class="hint">Use {{1}}, {{2}}... for dynamic variables</p>
+          <div id="body-examples" style="margin-top:12px"></div>
         </div>
 
         <div class="form-group">
@@ -612,6 +613,14 @@
     if (!name)       return showAlert('create-alert', 'error', 'Template name is required');
     if (!body_text)  return showAlert('create-alert', 'error', 'Body text is required');
     if (body_text.length > 1024) return showAlert('create-alert', 'error', 'Body exceeds 1024 chars');
+    const variableIndices = [...new Set((body_text.match(/\{\{\d+\}\}/g) || []).map(m => Number(m.slice(2, -2)))].sort((a, b) => a - b);
+    if (variableIndices.some((value, index) => value !== index + 1))
+      return showAlert('create-alert', 'error', 'Body variables must be numbered consecutively from {{1}} with no gaps.');
+    const bodyExamples = variableIndices.map(i => document.getElementById(`body-example-${i}`)?.value.trim() || '');
+    if (bodyExamples.some(value => !value))
+      return showAlert('create-alert', 'error', 'Enter a sample value for every body variable so Meta can review the template.');
+    if (header_type !== 'NONE' && !selectedFile)
+      return showAlert('create-alert', 'error', `Choose a ${header_type.toLowerCase()} header file before creating this template.`);
     for (let i = 0; i < website_buttons.length; i++) {
       const link = website_buttons[i];
       if ((link.text && !link.url) || (!link.text && link.url))
@@ -629,18 +638,22 @@
       }
       const res  = await fetch(`${API}/create`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, category, language, header_type, header_handle: uploadedHandle, body_text, footer_text, website_buttons }),
+        body: JSON.stringify({ name, category, language, header_type, header_handle: uploadedHandle, body_text, body_examples: bodyExamples, footer_text, website_buttons }),
       });
       const data = await res.json();
       if (data.success) {
+        let localMediaSaved = true;
         if (header_type !== 'NONE' && selectedFile) {
           const docFilename = header_type === 'DOCUMENT'
             ? (document.getElementById('doc-filename').value.trim() || selectedFile.name)
             : '';
-          await attachMediaToTemplate(name, selectedFile, docFilename);
+          localMediaSaved = await attachMediaToTemplate(name, selectedFile, docFilename);
+          const mediaSaved = localMediaSaved;
+          if (!mediaSaved) showAlert('create-alert', 'error', 'Template was created, but the document was not saved for Bulk Send. Use “Attach for Sending” on the template card before sending.');
         }
         showAlert('create-alert', 'success', data.message + ' — Status: ' + (data.data?.status || 'PENDING'));
         resetForm(); loadTemplates();
+        if (!localMediaSaved) showAlert('create-alert', 'error', 'Template was created, but its header file was not saved for Bulk Send. Use Attach for Sending on the template card before sending.');
       } else showAlert('create-alert', 'error', data.error || 'Failed to create template');
     } catch (e) { showAlert('create-alert', 'error', 'Server error: ' + e.message); }
     finally { btn.disabled = false; btn.textContent = '✨ Create Template'; }
@@ -652,6 +665,21 @@
     const el  = document.getElementById('char-count');
     el.textContent = `${len} / 1024`;
     el.className = 'char-count' + (len > 1024 ? ' over' : len > 900 ? ' warn' : '');
+    renderBodyExamples();
+  }
+
+  function renderBodyExamples() {
+    const wrap = document.getElementById('body-examples');
+    if (!wrap) return;
+    const previous = {};
+    wrap.querySelectorAll('[data-example-index]').forEach(input => { previous[input.dataset.exampleIndex] = input.value; });
+    const body = document.getElementById('tpl-body').value;
+    const indices = [...new Set((body.match(/\{\{\d+\}\}/g) || []).map(m => Number(m.slice(2, -2)))].sort((a, b) => a - b);
+    if (!indices.length) { wrap.innerHTML = ''; return; }
+    wrap.innerHTML = `<div style="font-size:12.5px;font-weight:600;margin-bottom:8px">Sample values for Meta review</div>
+      <p class="hint" style="margin-bottom:8px">Enter one realistic example for each variable. These are review examples; the Bulk Send page maps live Excel values separately.</p>` +
+      indices.map(i => `<div style="margin-bottom:8px"><label for="body-example-${i}">Example for {{${i}}}</label>
+        <input id="body-example-${i}" data-example-index="${i}" type="text" maxlength="1000" value="${esc(previous[i] || '')}" placeholder="Example value for variable {{${i}}}" /></div>`).join('');
   }
   function resetForm() {
     document.getElementById('tpl-name').value     = '';
