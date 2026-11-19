@@ -58,13 +58,12 @@ def parse_rows(rows):
         if phone:
             fields = {}
             for idx, header in enumerate(headers):
-                if not header:
+                if not header or idx == phone_idx:
                     continue
                 value = str(r[idx]).strip() if idx < len(r) and r[idx] is not None else ''
-                # Keep the spreadsheet's original columns in extra_data,
-                # including the phone/name columns. This lets Bulk Send show
-                # every source header with its original label while the
-                # normalized contact phone/name remain available separately.
+                # Keep the original name column so Bulk Send can show its
+                # spreadsheet label. The phone value is already stored in
+                # contacts.phone, so do not duplicate it in extra_data.
                 fields[header] = value
             contacts.append({'phone': phone, 'name': name, 'fields': fields})
 
