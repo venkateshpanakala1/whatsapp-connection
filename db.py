@@ -183,6 +183,14 @@ def init_db():
         # Migrations: add source_file + user_id to all tables
         cur.execute("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS source_file VARCHAR(255);")
         cur.execute("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS extra_data JSONB NOT NULL DEFAULT '{}'::jsonb;")
+        # Older imports duplicated the contact name in extra_data. Remove
+        # that redundant value when it matches the dedicated contacts.name.
+        # cur.execute("""
+        #     UPDATE contacts
+        #     SET extra_data = extra_data - 'Name'
+        #     WHERE extra_data ? 'Name'
+        #       AND extra_data->>'Name' = name
+        # """)
         cur.execute("ALTER TABLE whatsapp_connections ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")
         cur.execute("ALTER TABLE whatsapp_templates    ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")
         cur.execute("ALTER TABLE contacts              ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")
