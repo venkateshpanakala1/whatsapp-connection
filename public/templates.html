@@ -209,9 +209,10 @@
 
         <div class="form-group" style="margin-top:16px">
           <label>Body Text <span style="color:#dc2626">*</span></label>
-          <textarea id="tpl-body" placeholder="Hello {{1}}, your order {{2}} is confirmed!" oninput="updateCharCount()"></textarea>
+          <textarea id="tpl-body" placeholder="Hello {{1}}, your order {{2}} is confirmed!" oninput="onCreateBodyInput()"></textarea>
           <div class="char-count" id="char-count">0 / 1024</div>
           <p class="hint">Use {{1}}, {{2}}... for dynamic variables</p>
+          <div id="body-example-fields" style="margin-top:12px"></div>
         </div>
 
         <div class="form-group">
@@ -324,6 +325,7 @@
 <script>
   const API = '/api/templates';
   let uploadedHandle = '';
+  let bodyExampleNumbers = [];
   let selectedFile   = null;
 
   async function loadSidebarStatus() {
@@ -604,6 +606,8 @@
     const language    = document.getElementById('tpl-language').value;
     const header_type = document.getElementById('tpl-header-type').value;
     const body_text   = document.getElementById('tpl-body').value.trim();
+    const body_examples = [...new Set([...body_text.matchAll(/\{\{(\d+)\}\}/g)].map(m => Number(m[1])))].sort((a, b) => a - b)
+      .map(n => document.getElementById(`body-example-${n}`)?.value.trim() || `Sample ${n}`);
     const footer_text = document.getElementById('tpl-footer').value.trim();
     const website_buttons = [
       { text: document.getElementById('tpl-button-text').value.trim(), url: document.getElementById('tpl-button-url').value.trim() },
@@ -629,7 +633,7 @@
       }
       const res  = await fetch(`${API}/create`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, category, language, header_type, header_handle: uploadedHandle, body_text, footer_text, website_buttons }),
+        body: JSON.stringify({ name, category, language, header_type, header_handle: uploadedHandle, body_text, body_examples, footer_text, website_buttons }),
       });
       const data = await res.json();
       if (data.success) {
@@ -647,6 +651,20 @@
   }
 
   function sanitizeName(input) { input.value = input.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'); }
+  function onCreateBodyInput() {
+    updateCharCount();
+    const numbers = [...new Set([...document.getElementById('tpl-body').value.matchAll(/\{\{(\d+)\}\}/g)].map(m => Number(m[1])))].sort((a, b) => a - b);
+    if (numbers.join(',') === bodyExampleNumbers.join(',')) return;
+    const oldValues = Object.fromEntries(bodyExampleNumbers.map(n => [n, document.getElementById(`body-example-${n}`)?.value || '']));
+    bodyExampleNumbers = numbers;
+    const wrap = document.getElementById('body-example-fields');
+    if (!numbers.length) { wrap.innerHTML = ''; return; }
+    wrap.innerHTML = `<div class="hint" style="margin-bottom:8px">Sample values shown to Meta for approval (these are not sent to contacts):</div>` + numbers.map(n => `
+      <div class="form-group">
+        <label>Example for {{${n}}}</label>
+        <input type="text" id="body-example-${n}" value="${esc(oldValues[n] || `Sample ${n}`)}" placeholder="Example value" />
+      </div>`).join('');
+  }
   function updateCharCount() {
     const len = document.getElementById('tpl-body').value.length;
     const el  = document.getElementById('char-count');
@@ -656,6 +674,8 @@
   function resetForm() {
     document.getElementById('tpl-name').value     = '';
     document.getElementById('tpl-body').value     = '';
+    bodyExampleNumbers = [];
+    document.getElementById('body-example-fields').innerHTML = '';
     document.getElementById('tpl-footer').value   = '';
     document.getElementById('tpl-button-text').value = '';
     document.getElementById('tpl-button-url').value  = '';
