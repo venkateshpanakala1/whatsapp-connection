@@ -273,7 +273,8 @@
     const info = document.getElementById('file-info');
     if (!val) { info.classList.remove('show'); checkReady(); return; }
     const f = filesData.find(x => x.file === val);
-    if (f) { info.innerHTML = `<strong>${f.count}</strong> contacts will receive the message`; info.classList.add('show'); }
+    if (f) { info.innerHTML = `<strong>${f.count}</strong> contacts will receive the message${f.columns?.length ? `<br><span style="font-size:12px">Personalization columns: ${f.columns.map(esc).join(', ')}</span>` : ''}`; info.classList.add('show'); }
+    renderDynamicParams();
     checkReady();
   }
 
@@ -298,7 +299,11 @@
     }
     if (varCount) {
       data.bodyParams = [];
-      for (let i = 1; i <= varCount; i++) data.bodyParams.push(document.getElementById(`body-param-${i}`)?.value.trim() || '');
+      for (let i = 1; i <= varCount; i++) {
+        const mode = document.getElementById(`body-param-${i}`)?.value || 'fixed';
+        const fixed = document.getElementById(`body-fixed-${i}`)?.value.trim() || '';
+        data.bodyParams.push(mode === 'fixed' ? fixed : mode);
+      }
     }
     localStorage.setItem(tplStorageKey(currentTemplateName), JSON.stringify(data));
   }
@@ -325,9 +330,8 @@
       if (headerComp && ['IMAGE','VIDEO','DOCUMENT'].includes(headerComp.format)) {
         currentTemplateReq.headerFormat = headerComp.format;
       }
-      const varNumbers = new Set();
-      (body.match(/\{\{(\d+)\}\}/g) || []).forEach(m => varNumbers.add(parseInt(m.replace(/\D/g,''), 10)));
-      currentTemplateReq.varCount = varNumbers.size;
+      const varNumbers = (body.match(/\{\{(\d+)\}\}/g) || []).map(m => parseInt(m.replace(/\D/g,''), 10));
+      currentTemplateReq.varCount = varNumbers.length ? Math.max(...varNumbers) : 0;
     }
 
     if (currentTemplateReq.headerFormat) {
@@ -375,18 +379,40 @@
           </div>`;
       }
     }
+    const selectedFile = filesData.find(f => f.file === document.getElementById('file-select').value);
+    const fields = selectedFile?.columns || [];
     for (let i = 1; i <= varCount; i++) {
       const savedVal = saved.bodyParams?.[i - 1] || '';
-      html += `
-        <div class="form-group">
-          <label>Body Variable {{${i}}}</label>
-          <input type="text" id="body-param-${i}" placeholder="Fixed text, or {{name}} / {{phone}}" value="${esc(savedVal)}" oninput="onParamInput()" />
-          <p class="hint">Use <strong>{{name}}</strong> or <strong>{{phone}}</strong> to insert each contact's own value, or type fixed text sent to everyone.</p>
-        </div>`;
+      const mode = savedVal.startsWith('field:') ? savedVal
+        : savedVal.startsWith('{{field:') ? `field:${encodeURIComponent(savedVal.slice(8, -2))}`
+        : (savedVal === '{{name}}' ? 'name' : savedVal === '{{phone}}' ? 'phone' : 'fixed');
+      const fixed = mode === 'fixed' ? savedVal : '';
+      const choices = ['<option value="">— Choose a value —</option>',
+        ...fields.map(field => `<option value="field:${encodeURIComponent(field)}">Excel: ${esc(field)}</option>`),
+        '<option value="name">Contact name</option>', '<option value="phone">Phone number</option>',
+        '<option value="fixed">Same fixed text for everyone</option>'].join('');
+      html += `<div class="form-group"><label>Template variable {{${i}}}</label>
+        <select id="body-param-${i}" onchange="toggleFixedParam(${i}); onParamInput()">${choices}</select>
+        <input type="text" id="body-fixed-${i}" placeholder="Enter fixed text" value="${esc(fixed)}" oninput="onParamInput()" style="display:none;margin-top:8px" />
+        <p class="hint">Choose the matching Excel column. Each recipient gets the value from their own row.</p></div>`;
     }
     wrap.innerHTML = html;
+    for (let i = 1; i <= varCount; i++) {
+      const savedVal = saved.bodyParams?.[i - 1] || '';
+      const mode = savedVal.startsWith('field:') ? savedVal
+        : savedVal.startsWith('{{field:') ? `field:${encodeURIComponent(savedVal.slice(8, -2))}`
+        : (savedVal === '{{name}}' ? 'name' : savedVal === '{{phone}}' ? 'phone' : 'fixed');
+      document.getElementById(`body-param-${i}`).value = mode;
+      toggleFixedParam(i);
+    }
     wrap.style.display = 'block';
     checkReady();
+  }
+
+  function toggleFixedParam(index) {
+    const selector = document.getElementById(`body-param-${index}`);
+    const input = document.getElementById(`body-fixed-${index}`);
+    if (selector && input) input.style.display = selector.value === 'fixed' ? '' : 'none';
   }
 
   function esc(str) {
@@ -403,7 +429,8 @@
     }
     if (ready && varCount) {
       for (let i = 1; i <= varCount; i++) {
-        if (!document.getElementById(`body-param-${i}`)?.value.trim()) { ready = false; break; }
+        const mode = document.getElementById(`body-param-${i}`)?.value || '';
+        if (!mode || (mode === 'fixed' && !document.getElementById(`body-fixed-${i}`)?.value.trim())) { ready = false; break; }
       }
     }
     document.getElementById('run-btn').disabled = !ready;
@@ -419,7 +446,13 @@
     const header_media_url = headerFormat ? document.getElementById('header-media-url').value.trim() : '';
     const header_filename  = headerFormat === 'DOCUMENT' ? document.getElementById('header-filename').value.trim() : '';
     const body_params = [];
-    for (let i = 1; i <= varCount; i++) body_params.push(document.getElementById(`body-param-${i}`).value.trim());
+    for (let i = 1; i <= varCount; i++) {
+      const mode = document.getElementById(`body-param-${i}`).value;
+      if (mode.startsWith('field:')) body_params.push(`{{field:${decodeURIComponent(mode.slice(6))}}}`);
+      else if (mode === 'name') body_params.push('{{name}}');
+      else if (mode === 'phone') body_params.push('{{phone}}');
+      else body_params.push(document.getElementById(`body-fixed-${i}`).value.trim());
+    }
 
     document.getElementById('run-btn').disabled    = true;
     document.getElementById('run-btn').textContent = '⏳ Starting...';
