@@ -3,6 +3,7 @@ import requests as http
 from db import get_conn, put_conn
 import secrets
 import json
+import os
 from urllib.parse import urlparse
 
 templates_bp = Blueprint('templates', __name__)
@@ -33,9 +34,23 @@ def get_app_id(access_token):
             'input_token': access_token,
             'access_token': access_token
         }, timeout=10)
-        return res.json().get('data', {}).get('app_id')
+        data = res.json()
+        if 'error' in data:
+            error = data['error']
+            detail = error.get('error_user_msg') or error.get('error_data', {}).get('details') or error.get('message')
+            return None, detail
+        return data.get('data', {}).get('app_id'), None
     except:
-        return None
+        return None, 'Could not inspect the WhatsApp access token.'
+
+
+def meta_error_message(error):
+    detail = (error.get('error_user_msg') or error.get('error_user_title')
+              or error.get('error_data', {}).get('details') or error.get('message') or 'Meta API request failed')
+    code = error.get('code')
+    subcode = error.get('error_subcode')
+    suffix = f' (Meta code {code}' + (f'/{subcode}' if subcode else '') + ')' if code else ''
+    return detail + suffix
 
 
 def parse_website_buttons(body):
@@ -173,9 +188,13 @@ def upload_media():
         file_size = len(file_data)
         mime_type = file.mimetype
 
-        app_id = get_app_id(creds['access_token'])
+        app_id = (os.getenv('META_APP_ID') or '').strip() or get_app_id(creds['access_token'])
+        if isinstance(app_id, tuple):
+            app_id, app_id_error = app_id
+        else:
+            app_id_error = None
         if not app_id:
-            return jsonify({'error': 'Could not get App ID from token'}), 400
+            return jsonify({'error': f'Could not get the Meta App ID needed for the resumable media upload. {app_id_error or "Check the token and app access."}'}), 400
 
         # Step 1: Create upload session
         session_res = http.post(
@@ -189,7 +208,7 @@ def upload_media():
         )
         session_data = session_res.json()
         if 'error' in session_data:
-            return jsonify({'error': session_data['error']['message']}), 400
+            return jsonify({'error': meta_error_message(session_data['error'])}), 400
 
         upload_session_id = session_data['id']
 
@@ -206,7 +225,7 @@ def upload_media():
         )
         upload_data = upload_res.json()
         if 'error' in upload_data:
-            return jsonify({'error': upload_data['error']['message']}), 400
+            return jsonify({'error': meta_error_message(upload_data['error'])}), 400
 
         handle = upload_data.get('h')
         if not handle:
@@ -234,10 +253,22 @@ def create_template():
         header_type   = body.get('header_type', 'NONE')   # NONE / IMAGE / VIDEO / DOCUMENT
         header_handle = body.get('header_handle', '')
         body_text     = (body.get('body_text') or '').strip()
+        body_examples = body.get('body_examples') or []
         footer_text   = (body.get('footer_text') or '').strip()
 
         if not name or not body_text:
             return jsonify({'error': 'Template name and body text are required'}), 400
+        if header_type not in ('NONE', 'IMAGE', 'VIDEO', 'DOCUMENT'):
+            return jsonify({'error': 'Unsupported header type'}), 400
+        if header_type != 'NONE' and not header_handle:
+            return jsonify({'error': f'A successful {header_type.lower()} header upload is required before creating this template'}), 400
+        import re
+        variable_indices = sorted({int(n) for n in re.findall(r'\{\{(\d+)\}\}', body_text)})
+        if variable_indices and variable_indices != list(range(1, len(variable_indices) + 1)):
+            return jsonify({'error': 'Body variables must be numbered consecutively from {{1}} with no gaps'}), 400
+        if variable_indices and (not isinstance(body_examples, list) or len(body_examples) != len(variable_indices)
+                                 or any(not isinstance(v, str) or not v.strip() for v in body_examples)):
+            return jsonify({'error': 'A non-empty sample value is required for each body variable'}), 400
         try:
             website_buttons = parse_website_buttons(body)
         except ValueError as e:
@@ -253,7 +284,10 @@ def create_template():
                 'example': {'header_handle': [header_handle]}
             })
 
-        components.append({'type': 'BODY', 'text': body_text})
+        body_component = {'type': 'BODY', 'text': body_text}
+        if variable_indices:
+            body_component['example'] = {'body_text': [[value.strip() for value in body_examples]]}
+        components.append(body_component)
 
         if footer_text:
             components.append({'type': 'FOOTER', 'text': footer_text})
@@ -267,6 +301,7 @@ def create_template():
         payload = {
             'name': name,
             'category': category,
+            'allow_category_change': True,
             'language': language,
             'components': components
         }
@@ -282,7 +317,7 @@ def create_template():
         )
         data = res.json()
         if 'error' in data:
-            return jsonify({'error': data['error']['message']}), 400
+            return jsonify({'error': meta_error_message(data['error'])}), 400
 
         # Save to local DB
         conn = get_conn()
