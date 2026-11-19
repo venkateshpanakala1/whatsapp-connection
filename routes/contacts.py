@@ -148,7 +148,7 @@ def list_files():
                    ARRAY(SELECT DISTINCT field_name FROM contacts c2,
                          LATERAL jsonb_object_keys(c2.extra_data) AS fields(field_name)
                          WHERE c2.user_id = c.user_id AND c2.source_file = c.source_file ORDER BY field_name) AS columns
-            FROM contacts WHERE user_id = %s
+            FROM contacts c WHERE user_id = %s
             GROUP BY source_file, user_id
             ORDER BY MAX(created_at) DESC
         """, (user_id,))
