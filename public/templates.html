@@ -613,7 +613,7 @@
     if (!name)       return showAlert('create-alert', 'error', 'Template name is required');
     if (!body_text)  return showAlert('create-alert', 'error', 'Body text is required');
     if (body_text.length > 1024) return showAlert('create-alert', 'error', 'Body exceeds 1024 chars');
-    const variableIndices = [...new Set((body_text.match(/\{\{\d+\}\}/g) || []).map(m => Number(m.slice(2, -2)))].sort((a, b) => a - b);
+    const variableIndices = [...new Set((body_text.match(/\{\{\d+\}\}/g) || []).map(m => Number(m.slice(2, -2))))].sort((a, b) => a - b);
     if (variableIndices.some((value, index) => value !== index + 1))
       return showAlert('create-alert', 'error', 'Body variables must be numbered consecutively from {{1}} with no gaps.');
     const bodyExamples = variableIndices.map(i => document.getElementById(`body-example-${i}`)?.value.trim() || '');
@@ -674,7 +674,7 @@
     const previous = {};
     wrap.querySelectorAll('[data-example-index]').forEach(input => { previous[input.dataset.exampleIndex] = input.value; });
     const body = document.getElementById('tpl-body').value;
-    const indices = [...new Set((body.match(/\{\{\d+\}\}/g) || []).map(m => Number(m.slice(2, -2)))].sort((a, b) => a - b);
+    const indices = [...new Set((body.match(/\{\{\d+\}\}/g) || []).map(m => Number(m.slice(2, -2))))].sort((a, b) => a - b);
     if (!indices.length) { wrap.innerHTML = ''; return; }
     wrap.innerHTML = `<div style="font-size:12.5px;font-weight:600;margin-bottom:8px">Sample values for Meta review</div>
       <p class="hint" style="margin-bottom:8px">Enter one realistic example for each variable. These are review examples; the Bulk Send page maps live Excel values separately.</p>` +
