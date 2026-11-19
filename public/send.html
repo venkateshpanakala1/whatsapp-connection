@@ -389,7 +389,8 @@
       const fixed = mode === 'fixed' ? savedVal : '';
       const choices = ['<option value="">— Choose a value —</option>',
         ...fields.map(field => `<option value="field:${encodeURIComponent(field)}">Excel: ${esc(field)}</option>`),
-        '<option value="name">Contact name</option>', '<option value="phone">Phone number</option>',
+        // '<option value="name">Contact name</option>'
+        '<option value="phone">Phone number</option>',
         '<option value="fixed">Same fixed text for everyone</option>'].join('');
       html += `<div class="form-group"><label>Template variable {{${i}}}</label>
         <select id="body-param-${i}" onchange="toggleFixedParam(${i}); onParamInput()">${choices}</select>
