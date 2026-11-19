@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify, session
 import csv
 import io
+import json
 from db import get_conn, put_conn
 
 contacts_bp = Blueprint('contacts', __name__)
@@ -17,8 +18,11 @@ def clean_phone(phone):
     return digits if len(digits) >= 7 else ''
 
 
-PHONE_COLS = {'numbers', 'number', 'phone', 'mobile', 'phone_number', 'phonenumber', 'whatsapp', 'contact'}
-NAME_COLS  = {'name', 'full_name', 'contact_name', 'customer_name'}
+PHONE_COLS = {'numbers', 'number', 'phone', 'mobile', 'phone_number', 'phonenumber', 'whatsapp', 'contact', 'phone number', 'mobile number', 'whatsapp number', 'phone no', 'mobile no', 'telephone'}
+NAME_COLS  = {'name', 'full_name', 'contact_name', 'customer_name', 'full name', 'contact name', 'customer name'}
+
+def normalize_header(value):
+    return ' '.join(str(value or '').strip().lower().replace('_', ' ').split())
 
 
 def parse_rows(rows):
@@ -26,15 +30,14 @@ def parse_rows(rows):
     if not rows:
         return []
 
-    first = [str(c).strip().lower() for c in rows[0]]
+    first = [normalize_header(c) for c in rows[0]]
 
-    phone_col_hit = next((c for c in first if c in PHONE_COLS), None)
-    name_col_hit  = next((c for c in first if c in NAME_COLS),  None)
+    phone_idx = next((i for i, c in enumerate(first) if c in PHONE_COLS), None)
+    name_idx  = next((i for i, c in enumerate(first) if c in NAME_COLS), None)
 
-    if phone_col_hit:
+    has_header = phone_idx is not None
+    if has_header:
         # Header row recognised
-        phone_idx = first.index(phone_col_hit)
-        name_idx  = first.index(name_col_hit) if name_col_hit else None
         data_rows = rows[1:]
     elif len(first) == 1:
         # Single column, no recognised header — treat all rows as phone numbers
@@ -47,12 +50,20 @@ def parse_rows(rows):
         name_idx  = 1 if len(first) >= 2 else None
         data_rows = rows
 
+    headers = [str(c).strip() for c in rows[0]] if has_header else []
     contacts = []
     for r in data_rows:
         phone = clean_phone(r[phone_idx] if phone_idx < len(r) else '')
         name  = str(r[name_idx]).strip() if name_idx is not None and name_idx < len(r) else ''
         if phone:
-            contacts.append({'phone': phone, 'name': name})
+            fields = {}
+            for idx, header in enumerate(headers):
+                if not header or idx == phone_idx or idx == name_idx:
+                    continue
+                value = str(r[idx]).strip() if idx < len(r) and r[idx] is not None else ''
+                if value:
+                    fields[header] = value
+            contacts.append({'phone': phone, 'name': name, 'fields': fields})
 
     return contacts
 
@@ -109,11 +120,11 @@ def import_contacts():
             if not phone:
                 continue
             cur.execute("""
-                INSERT INTO contacts (user_id, name, phone, source_file)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO contacts (user_id, name, phone, source_file, extra_data)
+                VALUES (%s, %s, %s, %s, %s::jsonb)
                 ON CONFLICT (user_id, phone, source_file) DO UPDATE
-                    SET name = EXCLUDED.name, updated_at = NOW()
-            """, (user_id, name, phone, source_file))
+                    SET name = EXCLUDED.name, extra_data = EXCLUDED.extra_data, updated_at = NOW()
+            """, (user_id, name, phone, source_file, json.dumps(c.get('fields') or {})))
             saved += 1
         conn.commit()
         cur.close()
@@ -133,9 +144,12 @@ def list_files():
     try:
         cur = conn.cursor()
         cur.execute("""
-            SELECT source_file, COUNT(*) as cnt, MAX(created_at) as imported_at
+            SELECT source_file, COUNT(*) as cnt, MAX(created_at) as imported_at,
+                   ARRAY(SELECT DISTINCT field_name FROM contacts c2,
+                         LATERAL jsonb_object_keys(c2.extra_data) AS fields(field_name)
+                         WHERE c2.user_id = c.user_id AND c2.source_file = c.source_file ORDER BY field_name) AS columns
             FROM contacts WHERE user_id = %s
-            GROUP BY source_file
+            GROUP BY source_file, user_id
             ORDER BY MAX(created_at) DESC
         """, (user_id,))
         rows = cur.fetchall()
@@ -143,7 +157,7 @@ def list_files():
         files = [
             # Naive TIMESTAMP columns are written in UTC (Postgres's NOW()) —
             # mark it so the browser converts to local time/date correctly.
-            {'file': r[0], 'count': r[1], 'imported_at': (r[2].isoformat() + 'Z') if r[2] else ''}
+            {'file': r[0], 'count': r[1], 'imported_at': (r[2].isoformat() + 'Z') if r[2] else '', 'columns': r[3] or []}
             for r in rows
         ]
         return jsonify({'success': True, 'files': files})

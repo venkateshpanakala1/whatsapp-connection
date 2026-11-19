@@ -105,12 +105,9 @@
       <div class="upload-icon-big">📂</div>
       <div class="upload-ttl">Drop your file here or browse</div>
       <div class="upload-desc">Supports <strong>CSV</strong> and <strong>Excel (.xlsx)</strong></div>
-      <div class="upload-desc" style="margin-top:5px">
-        <strong>numbers</strong> only
-        <!-- <strong>name</strong> + <strong>numbers</strong> -->
-      </div>
+      <div class="upload-desc" style="margin-top:5px"><strong>Phone number</strong> plus any personalization columns, such as Name, MRN, Booth Name, and Voting Date.</div>
       <div class="upload-desc" style="margin-top:3px;font-size:11.5px;color:#9ca3af">
-        Header: number / phone / mobile / numbers
+        Keep a header row. One column must be named Phone, Number, Mobile, or WhatsApp.
       </div>
     </div>
 
@@ -247,20 +244,16 @@
   function renderPreview(contacts) {
     if (!contacts.length) { showAlert('upload-alert', 'error', 'No valid phone numbers found.'); return; }
     const hasName = contacts.some(c => c.name);
+    const fieldNames = [...new Set(contacts.flatMap(c => Object.keys(c.fields || {})))];
     document.getElementById('preview-count').innerHTML =
       `Found <strong>${contacts.length}</strong> contact${contacts.length !== 1 ? 's' : ''}`;
-    document.getElementById('preview-thead').innerHTML = hasName
-      ? '<tr><th>#</th><th>Name</th><th>Phone</th></tr>'
-      : '<tr><th>#</th><th>Phone</th></tr>';
+    document.getElementById('preview-thead').innerHTML = `<tr><th>#</th>${hasName ? '<th>Name</th>' : ''}<th>Phone</th>${fieldNames.map(n => `<th>${esc(n)}</th>`).join('')}</tr>`;
     const SHOW  = 10;
     const rows  = contacts.slice(0, SHOW).map((c, i) =>
-      hasName
-        ? `<tr><td>${i+1}</td><td>${esc(c.name)}</td><td>${esc(c.phone)}</td></tr>`
-        : `<tr><td>${i+1}</td><td>${esc(c.phone)}</td></tr>`
+      `<tr><td>${i+1}</td>${hasName ? `<td>${esc(c.name)}</td>` : ''}<td>${esc(c.phone)}</td>${fieldNames.map(n => `<td>${esc((c.fields || {})[n] || '')}</td>`).join('')}</tr>`
     );
-    if (contacts.length > SHOW) rows.push(hasName
-      ? `<tr class="more-row"><td colspan="3">… and ${contacts.length - SHOW} more</td></tr>`
-      : `<tr class="more-row"><td colspan="2">… and ${contacts.length - SHOW} more</td></tr>`);
+    if (contacts.length > SHOW) rows.push(
+      `<tr class="more-row"><td colspan="${2 + fieldNames.length + (hasName ? 1 : 0)}">… and ${contacts.length - SHOW} more</td></tr>`);
     document.getElementById('preview-tbody').innerHTML = rows.join('');
     document.getElementById('preview-wrap').classList.add('show');
     document.getElementById('import-btn').textContent = `📥 Import ${contacts.length} Contacts`;

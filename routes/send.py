@@ -33,12 +33,12 @@ def get_contacts_by_file(source_file, user_id):
     try:
         cur = conn.cursor()
         cur.execute(
-            'SELECT phone, name FROM contacts WHERE user_id = %s AND source_file = %s ORDER BY id ASC',
+            'SELECT phone, name, extra_data FROM contacts WHERE user_id = %s AND source_file = %s ORDER BY id ASC',
             (user_id, source_file)
         )
         rows = cur.fetchall()
         cur.close()
-        return [{'phone': r[0], 'name': r[1] or ''} for r in rows]
+        return [{'phone': r[0], 'name': r[1] or '', 'fields': r[2] or {}} for r in rows]
     finally:
         put_conn(conn)
 
@@ -211,6 +211,9 @@ def build_template_components(header_format, header_media_url, header_filename, 
                 resolved = contact.get('name') or contact['phone']
             elif val == '{{phone}}':
                 resolved = contact['phone']
+            elif val.startswith('{{field:') and val.endswith('}}'):
+                field_name = val[8:-2]
+                resolved = (contact.get('fields') or {}).get(field_name, '')
             else:
                 resolved = val
             parameters.append({'type': 'text', 'text': resolved or ''})
@@ -430,6 +433,15 @@ def start_send():
     contacts = get_contacts_by_file(source_file, user_id)
     if not contacts:
         return jsonify({'error': f'No contacts found in "{source_file}"'}), 400
+
+    # Refuse to start a partially personalized campaign when a selected
+    # spreadsheet column is missing/blank for any recipient.
+    for index, value in enumerate(body_params, start=1):
+        if isinstance(value, str) and value.startswith('{{field:') and value.endswith('}}'):
+            field_name = value[8:-2]
+            missing = sum(1 for c in contacts if not str((c.get('fields') or {}).get(field_name, '')).strip())
+            if missing:
+                return jsonify({'error': f'Column "{field_name}" is blank for {missing} contact(s); variable {{{{{index}}}}} cannot be filled.'}), 400
 
     job_id = str(uuid.uuid4())
     worker_token = create_job(job_id, user_id, source_file, template_name, len(contacts), delay,

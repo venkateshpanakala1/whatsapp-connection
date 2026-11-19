@@ -182,6 +182,7 @@ def init_db():
         cur.execute("ALTER TABLE whatsapp_templates ADD COLUMN IF NOT EXISTS website_buttons JSONB DEFAULT '[]'::jsonb;")
         # Migrations: add source_file + user_id to all tables
         cur.execute("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS source_file VARCHAR(255);")
+        cur.execute("ALTER TABLE contacts ADD COLUMN IF NOT EXISTS extra_data JSONB NOT NULL DEFAULT '{}'::jsonb;")
         cur.execute("ALTER TABLE whatsapp_connections ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")
         cur.execute("ALTER TABLE whatsapp_templates    ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")
         cur.execute("ALTER TABLE contacts              ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")
