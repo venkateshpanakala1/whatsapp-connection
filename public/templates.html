@@ -209,9 +209,9 @@
 
         <div class="form-group" style="margin-top:16px">
           <label>Body Text <span style="color:#dc2626">*</span></label>
-          <textarea id="tpl-body" placeholder="Hello {{1}}, your order {{2}} is confirmed!" oninput="updateCharCount()"></textarea>
+          <textarea id="tpl-body" placeholder="Hello {{1}}, your order {{2}} is confirmed!" oninput="updateCharCount()" onkeydown="handleBodyFormatting(event)"></textarea>
           <div class="char-count" id="char-count">0 / 1024</div>
-          <p class="hint">Use {{1}}, {{2}}... for dynamic variables</p>
+          <p class="hint">Use {{1}}, {{2}}... for dynamic variables. Select text and press Ctrl+B to mark it bold in WhatsApp.</p>
           <div id="body-examples" style="margin-top:12px"></div>
         </div>
 
@@ -660,6 +660,30 @@
   }
 
   function sanitizeName(input) { input.value = input.value.toLowerCase().replace(/[^a-z0-9_]/g, '_'); }
+  function handleBodyFormatting(event) {
+    if (!(event.ctrlKey || event.metaKey) || event.key.toLowerCase() !== 'b') return;
+    event.preventDefault();
+    const input = event.currentTarget;
+    const start = input.selectionStart;
+    const end = input.selectionEnd;
+    const value = input.value;
+    const selected = value.slice(start, end);
+
+    if (!selected) {
+      input.value = value.slice(0, start) + '**' + value.slice(end);
+      input.setSelectionRange(start + 1, start + 1);
+    } else if (selected.startsWith('*') && selected.endsWith('*') && selected.length >= 2) {
+      const unwrapped = selected.slice(1, -1);
+      input.value = value.slice(0, start) + unwrapped + value.slice(end);
+      input.setSelectionRange(start, start + unwrapped.length);
+    } else {
+      const wrapped = `*${selected}*`;
+      input.value = value.slice(0, start) + wrapped + value.slice(end);
+      input.setSelectionRange(start, start + wrapped.length);
+    }
+    updateCharCount();
+  }
+
   function updateCharCount() {
     const len = document.getElementById('tpl-body').value.length;
     const el  = document.getElementById('char-count');
