@@ -781,8 +781,7 @@
           <div><div class="doc-name">${fname || 'document.pdf'}</div><div class="doc-size">Document</div></div>
         </div>`;
     }
-    const formattedBody = (bodyText || '(No body text)')
-      .replace(/\{\{(\d+)\}\}/g, '<span style="color:var(--g-500);font-weight:700">{{$1}}</span>');
+    const formattedBody = formatWhatsAppPreview(bodyText || '(No body text)');
     const timeStr = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
     document.getElementById('prev-header').innerHTML   = headerHtml;
     document.getElementById('prev-body').innerHTML     = formattedBody;
@@ -796,6 +795,13 @@
   }
   function closePreview() { document.getElementById('preview-modal').classList.remove('open'); }
   function closePreviewOnBg(e) { if (e.target === document.getElementById('preview-modal')) closePreview(); }
+
+  function formatWhatsAppPreview(text) {
+    return esc(text)
+      .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+      .replace(/\{\{(\d+)\}\}/g, '<span style="color:var(--g-500);font-weight:700">{{$1}}</span>')
+      .replace(/\n/g, '<br>');
+  }
 
   function esc(str) {
     return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
