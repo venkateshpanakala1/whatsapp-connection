@@ -107,9 +107,9 @@ def spend():
                 'fields': (
                     'currency,'
                     f"conversation_analytics.start({start_ts}).end({end_ts})"
-                    '.granularity(DAILY).dimensions(["conversation_category"]),'
+                    '.granularity(DAILY).dimensions(["CONVERSATION_CATEGORY"]),'
                     f"pricing_analytics.start({start_ts}).end({end_ts})"
-                    '.granularity(DAILY).dimensions(["pricing_category","pricing_type"])'
+                    '.granularity(DAILY).dimensions(["PRICING_CATEGORY","PRICING_TYPE"])'
                 ),
             },
             headers={'Authorization': f"Bearer {creds['access_token']}"},
