@@ -58,8 +58,8 @@ def get_bulk_sent_count(user_id, start_dt, end_dt):
 # per-country pricing changes and varies, and a locally-guessed number would
 # drift from the tenant's actual bill.
 #
-# Uses per-message pricing analytics; the legacy conversation_analytics field
-# was removed by Meta in November 2026.
+# Requests per-message pricing analytics without the legacy conversation_analytics
+# field, which can cause Meta to reject the combined field expansion.
 @budget_bp.route('/spend', methods=['GET'])
 def spend():
     user_id = session.get('user_id')
