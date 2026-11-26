@@ -162,16 +162,8 @@
   function renderChart(days, currency) {
     const maxTotal = Math.max(1, ...days.map(d => d.total_cost));
     const MAX_BAR_HEIGHT = 160;
-    let peakLabeled = false; // only the first day hitting maxTotal gets the direct label, even if there's a tie
-
     const cols = days.map(d => {
       const barHeight = Math.max(2, Math.round((d.total_cost / maxTotal) * MAX_BAR_HEIGHT));
-      const catBreakdown = CATEGORY_ORDER
-        .filter(cat => d.by_category[cat])
-        .map(cat => `${CATEGORY_META[cat]?.label || cat} ${formatMoney(d.by_category[cat], currency)}`)
-        .join(', ');
-      const title = `${formatDateLabel(d.date)} — ${formatMoney(d.total_cost, currency)}${catBreakdown ? ' (' + catBreakdown + ')' : ''}`;
-
       let segs;
       if (d.total_cost > 0) {
         segs = CATEGORY_ORDER
@@ -182,21 +174,17 @@
         segs = `<div class="budget-seg budget-seg-empty" style="flex:1"></div>`;
       }
 
-      // One direct label on the peak day only, for scale reference — not a
-      // number crammed onto every bar. Positioned relative to .budget-bar-
-      // track (not nested inside .budget-bar itself, which clips to a
-      // rounded top corner via overflow:hidden).
-      let peakLabel = '';
-      if (!peakLabeled && d.total_cost === maxTotal && d.total_cost > 0) {
-        peakLabeled = true;
-        peakLabel = `<div class="budget-peak-label" style="bottom:${barHeight + 6}px">${formatMoney(d.total_cost, currency)}</div>`;
-      }
+      // Show each day's total directly above its bar instead of hiding it
+      // in a hover tooltip. Keep zero-spend days unlabeled.
+      const priceLabel = d.total_cost > 0
+        ? `<div class="budget-peak-label" style="bottom:${barHeight + 6}px">${formatMoney(d.total_cost, currency)}</div>`
+        : '';
 
       return `
-        <div class="budget-col" title="${esc(title)}">
+        <div class="budget-col">
           <div class="budget-bar-track">
             <div class="budget-bar" style="height:${barHeight}px">${segs}</div>
-            ${peakLabel}
+            ${priceLabel}
           </div>
           <div class="budget-col-label">${formatDateLabel(d.date)}</div>
         </div>`;
