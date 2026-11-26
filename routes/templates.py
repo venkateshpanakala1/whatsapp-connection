@@ -5,6 +5,7 @@ import secrets
 import json
 import os
 from urllib.parse import urlparse
+from routes.meta_templates_cache import get_meta_templates, invalidate_meta_templates
 
 templates_bp = Blueprint('templates', __name__)
 META_API = 'https://graph.facebook.com/v22.0'
@@ -110,19 +111,9 @@ def list_templates():
         creds = get_wa_credentials(user_id)
         if not creds:
             return jsonify({'error': 'WhatsApp not connected'}), 400
-        all_templates = []
-        url     = f"{META_API}/{creds['waba_id']}/message_templates"
-        params  = {'limit': 100, 'fields': 'id,name,category,language,status,components,created_time,rejected_reason'}
-        headers = {'Authorization': f"Bearer {creds['access_token']}"}
-
-        while url:
-            res  = http.get(url, params=params, headers=headers, timeout=10)
-            data = res.json()
-            if 'error' in data:
-                return jsonify({'error': data['error']['message']}), 400
-            all_templates.extend(data.get('data', []))
-            url    = data.get('paging', {}).get('next')
-            params = {}
+        all_templates, error = get_meta_templates(creds['waba_id'], creds['access_token'])
+        if error:
+            return jsonify({'error': error}), 502
 
         hidden_names = get_hidden_template_names(user_id)
         all_templates = [t for t in all_templates if t.get('name') not in hidden_names]
@@ -319,6 +310,8 @@ def create_template():
         if 'error' in data:
             return jsonify({'error': meta_error_message(data['error'])}), 400
 
+        invalidate_meta_templates(creds['waba_id'])
+
         # Save to local DB
         conn = get_conn()
         try:
@@ -402,6 +395,7 @@ def edit_template():
             detail = err.get('error_user_msg') or err.get('error_data', {}).get('details') or err.get('message')
             print(f'[templates] edit failed for template_id={template_id}: {err}')
             return jsonify({'error': detail}), 400
+        invalidate_meta_templates(creds['waba_id'])
         return jsonify({'success': True, 'message': 'Template updated and resubmitted for review'})
     except Exception as e:
         return jsonify({'error': str(e)}), 500

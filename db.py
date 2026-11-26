@@ -10,7 +10,7 @@ _database_url = os.getenv('DATABASE_URL', '')
 
 if _database_url:
     _u = urlparse(_database_url)
-    pool = psycopg2.pool.SimpleConnectionPool(
+    pool = psycopg2.pool.ThreadedConnectionPool(
         1, 10,
         host=_u.hostname,
         port=_u.port,
@@ -20,7 +20,7 @@ if _database_url:
         sslmode='require',
     )
 else:
-    pool = psycopg2.pool.SimpleConnectionPool(
+    pool = psycopg2.pool.ThreadedConnectionPool(
         1, 10,
         host=os.getenv('DB_HOST', 'localhost'),
         port=os.getenv('DB_PORT', 5432),
@@ -213,6 +213,17 @@ def init_db():
         # Tenant name, captured when an admin registers a new tenant account.
         cur.execute("ALTER TABLE users                  ADD COLUMN IF NOT EXISTS name VARCHAR(200);")
         cur.execute("ALTER TABLE counter_replies       ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_contacts_user_file_id ON contacts (user_id, source_file, id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_contacts_user_phone ON contacts (user_id, phone);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_send_jobs_user_created ON send_jobs (user_id, created_at DESC);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_send_logs_job_status ON send_logs (job_id, status);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_send_logs_user_status_sent_at ON send_logs (user_id, status, sent_at);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_send_logs_wamid ON send_logs (wamid) WHERE wamid IS NOT NULL;")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_replies_user_phone_received ON replies (user_id, from_phone, received_at DESC);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_replies_user_unread ON replies (user_id, from_phone) WHERE direction = 'in' AND is_read = FALSE;")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_replies_user_wamid ON replies (user_id, wamid) WHERE wamid IS NOT NULL;")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_reply_media_reply_id ON reply_media (reply_id);")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_counter_replies_user_status ON counter_replies (user_id, status, id);")
         # Change contacts UNIQUE(phone) → UNIQUE(user_id, phone) so two users can share same number.
         # (Superseded below by UNIQUE(user_id, phone, source_file) — this old
         # constraint is only ever dropped now, never recreated, since
