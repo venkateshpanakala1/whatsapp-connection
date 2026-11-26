@@ -213,7 +213,7 @@
       const res  = await fetch(`${API}/spend?days=${days}`);
       const data = await res.json();
       if (!data.success) {
-        body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">${esc(data.error || 'Could not load spend data')}</div><div class="empty-sub">This needs a payment method attached to your WhatsApp Business Account in Meta Business Manager.</div></div>`;
+        body.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div><div class="empty-text">${esc(data.error || 'Could not load spend data')}</div><div class="empty-sub">Check the connected WhatsApp account and its Meta API permissions.</div></div>`;
         return;
       }
       budgetData = data;

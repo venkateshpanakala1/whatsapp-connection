@@ -58,17 +58,8 @@ def get_bulk_sent_count(user_id, start_dt, end_dt):
 # per-country pricing changes and varies, and a locally-guessed number would
 # drift from the tenant's actual bill.
 #
-# A live test on this account confirmed Meta's own WhatsApp Manager billing
-# page shows real spend, but the older `conversation_analytics` field came
-# back completely absent (not just empty) from the Graph API response —
-# that's what Meta does for a field that no longer applies to an account,
-# not one that's genuinely empty. Since Meta migrated accounts to
-# per-message pricing through 2025, this now also requests the newer
-# `pricing_analytics` field alongside it and uses whichever one actually
-# comes back populated. If numbers still look wrong or missing, check the
-# raw response this endpoint logs (and returns inline as `_debug_raw_meta_
-# response` when nothing was found) against Meta's current docs for the
-# exact per-message pricing analytics field/dimension names.
+# Uses per-message pricing analytics; the legacy conversation_analytics field
+# was removed by Meta in November 2026.
 @budget_bp.route('/spend', methods=['GET'])
 def spend():
     user_id = session.get('user_id')
@@ -91,23 +82,8 @@ def spend():
         res = http.get(
             f"{META_API}/{creds['waba_id']}",
             params={
-                # Requesting both the older conversation-based field and the
-                # newer per-message-pricing field in one call — a live test
-                # confirmed Meta returns real spend data on its own WhatsApp
-                # Manager billing page for this account, but our first
-                # attempt (conversation_analytics) came back completely
-                # absent from the response with no error at all, which is
-                # what Meta does for a field that doesn't apply to this
-                # account rather than one that's just empty. Since Meta
-                # migrated accounts to per-message pricing through 2025,
-                # `pricing_analytics` is the likely correct field now —
-                # asking for both means whichever one Meta actually
-                # recognizes shows up, without another guess-and-redeploy
-                # round trip.
                 'fields': (
                     'currency,'
-                    f"conversation_analytics.start({start_ts}).end({end_ts})"
-                    '.granularity(DAILY).dimensions(["CONVERSATION_CATEGORY"]),'
                     f"pricing_analytics.start({start_ts}).end({end_ts})"
                     '.granularity(DAILY).dimensions(["PRICING_CATEGORY","PRICING_TYPE"])'
                 ),
@@ -122,15 +98,11 @@ def spend():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-    # Whichever of the two fields Meta actually recognized for this account
-    # is the one with real data in it — the other comes back absent, same as
-    # conversation_analytics did on its own above. Read both, use whichever
-    # has data_points.
+    # Pricing analytics returns cost and volume data points by date.
     try:
         points = []
-        for field_name in ('conversation_analytics', 'pricing_analytics'):
-            for block in data.get(field_name, {}).get('data', []):
-                points.extend(block.get('data_points', []))
+        for block in data.get('pricing_analytics', {}).get('data', []):
+            points.extend(block.get('data_points', []))
     except Exception as e:
         return jsonify({'error': f"Unexpected response shape from Meta: {e}"}), 502
 
@@ -143,11 +115,7 @@ def spend():
         entry = by_date.setdefault(date_key, {
             'date': date_key, 'total_cost': 0.0, 'total_conversations': 0, 'by_category': {}
         })
-        # Field names differ between the two possible sources above
-        # (conversation_category/conversation vs pricing_category/volume) —
-        # the exact per-message-pricing shape isn't confirmed yet, so read
-        # whichever key is actually present rather than assuming one.
-        cat = (p.get('conversation_category') or p.get('pricing_category') or 'OTHER').upper()
+        cat = (p.get('pricing_category') or 'OTHER').upper()
         cost  = float(p.get('cost') or 0)
         convs = int(p.get('conversation') or p.get('volume') or 0)
         entry['total_cost'] += cost
