@@ -119,7 +119,7 @@ def receive():
                 # counts in the Bulk Send analytics — without it we'd only ever
                 # know a message left our side, never whether it arrived or was seen.
                 for status_event in value.get('statuses', []):
-                    update_send_log_status(status_event.get('id', ''), status_event.get('status', ''))
+                    update_send_log_status(status_event)
 
     except Exception as e:
         print(f'[WEBHOOK] error: {e}')
@@ -128,21 +128,33 @@ def receive():
     return 'OK', 200
 
 
-def update_send_log_status(wamid, status):
-    """Records delivered/read timestamps on the matching send_logs row.
-    'sent' is already set when we log the send itself; 'failed' status
-    callbacks are ignored here since a failed *send* is already logged as
-    such at send time — this only tracks what happens after a successful send."""
-    if not wamid or status not in ('delivered', 'read'):
+def update_send_log_status(status_event):
+    """Record delivery lifecycle updates from WhatsApp's status webhook."""
+    wamid = status_event.get('id', '')
+    status = status_event.get('status', '')
+    if not wamid or status not in ('sent', 'delivered', 'read', 'failed'):
         return
-    column = 'delivered_at' if status == 'delivered' else 'read_at'
+    errors = status_event.get('errors') or []
+    error_text = ''
+    if errors:
+        error = errors[0]
+        error_text = error.get('message') or error.get('title') or (error.get('error_data') or {}).get('details', '')
+
     conn = get_conn()
     try:
         cur = conn.cursor()
-        cur.execute(f"""
-            UPDATE send_logs SET {column} = NOW()
-            WHERE wamid = %s AND {column} IS NULL
-        """, (wamid,))
+        cur.execute("""
+            UPDATE send_logs
+            SET delivery_status = CASE
+                    WHEN delivery_status = 'failed' THEN 'failed'
+                    WHEN %s = 'sent' AND delivery_status IN ('delivered', 'read') THEN delivery_status
+                    ELSE %s
+                END,
+                delivery_error = CASE WHEN %s <> '' THEN %s ELSE delivery_error END,
+                delivered_at = CASE WHEN %s IN ('delivered', 'read') THEN COALESCE(delivered_at, NOW()) ELSE delivered_at END,
+                read_at = CASE WHEN %s = 'read' THEN COALESCE(read_at, NOW()) ELSE read_at END
+            WHERE wamid = %s
+        """, (status, status, error_text, error_text, status, status, wamid))
         conn.commit()
         cur.close()
     except Exception as e:

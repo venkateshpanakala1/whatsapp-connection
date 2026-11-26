@@ -1,10 +1,15 @@
-from flask import Blueprint, request, jsonify, session
+from flask import Blueprint, request, jsonify, session, send_file
 import requests as http
 from db import get_conn, put_conn
 import json
+import io
 import time
 import threading
 import uuid
+from collections import defaultdict, deque
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill
+from werkzeug.utils import secure_filename
 
 send_bp = Blueprint('send', __name__)
 META_API = 'https://graph.facebook.com/v22.0'
@@ -43,21 +48,48 @@ def get_contacts_by_file(source_file, user_id):
         put_conn(conn)
 
 
-def log_send(job_id, phone, name, template_name, status, user_id, wamid=None):
+def log_send(job_id, phone, name, template_name, user_id):
+    """Create a recipient record before sending so interrupted jobs retain it."""
     try:
         conn = get_conn()
         cur  = conn.cursor()
         cur.execute("""
-            INSERT INTO send_logs (user_id, job_id, phone, name, template_name, status, wamid)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (user_id, job_id, phone, name or '', template_name, status, wamid))
+            INSERT INTO send_logs (user_id, job_id, phone, name, template_name, status, sent_at)
+            VALUES (%s, %s, %s, %s, %s, 'initiated', NULL)
+            RETURNING id
+        """, (user_id, job_id, phone, name or '', template_name))
+        row = cur.fetchone()
         conn.commit()
         cur.close()
+        return row[0] if row else None
     except Exception:
-        pass
+        return None
     finally:
         try: put_conn(conn)
         except: pass
+
+
+def finish_send_log(log_id, status, wamid=None, error=None):
+    if not log_id:
+        return
+    conn = None
+    try:
+        conn = get_conn()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE send_logs
+            SET status = %s, wamid = %s, send_error = %s,
+                sent_at = CASE WHEN %s = 'sent' THEN NOW() ELSE NULL END,
+                delivery_status = CASE WHEN %s = 'sent' THEN 'pending' ELSE 'failed' END
+            WHERE id = %s
+        """, (status, wamid, error, status, status, log_id))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        print(f'[SEND] finish_send_log error for log_id={log_id}: {e}')
+    finally:
+        if conn:
+            put_conn(conn)
 
 
 # ── Job state lives in the DB (not a process-local dict) so cancel/status/
@@ -244,6 +276,7 @@ def send_worker(job_id, contacts, template_name, template_lang, creds, delay, us
             'type':              'template',
             'template':          template
         }
+        log_id = log_send(job_id, phone, name, template_name, user_id)
         try:
             res  = http.post(
                 f"{META_API}/{creds['phone_number_id']}/messages",
@@ -256,15 +289,16 @@ def send_worker(job_id, contacts, template_name, template_lang, creds, delay, us
             )
             data = res.json()
             if 'error' in data:
-                bump_job_progress(job_id, False, f"{phone}: {data['error']['message']}")
-                log_send(job_id, phone, name, template_name, 'failed', user_id)
+                error = data['error'].get('message', 'Meta rejected the message')
+                bump_job_progress(job_id, False, f"{phone}: {error}")
+                finish_send_log(log_id, 'failed', error=error)
             else:
                 bump_job_progress(job_id, True)
                 wamid = (data.get('messages') or [{}])[0].get('id', '')
-                log_send(job_id, phone, name, template_name, 'sent', user_id, wamid)
-        except Exception:
+                finish_send_log(log_id, 'sent', wamid=wamid)
+        except Exception as e:
             bump_job_progress(job_id, False, f"{phone}: request failed")
-            log_send(job_id, phone, name, template_name, 'failed', user_id)
+            finish_send_log(log_id, 'failed', error=str(e) or 'Request failed')
 
         elapsed = 0
         while elapsed < delay:
@@ -556,6 +590,106 @@ def send_history_recipients(job_id):
             'delivered': row[1] or 0,
             'not_delivered': row[2] or 0,
         })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        put_conn(conn)
+
+
+@send_bp.route('/history/<job_id>/export', methods=['GET'])
+def export_send_history(job_id):
+    user_id = session.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'Not logged in'}), 401
+
+    conn = get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT id, source_file, template_name, contacts_snapshot
+            FROM send_jobs WHERE id = %s AND user_id = %s
+        """, (job_id, user_id))
+        job = cur.fetchone()
+        if not job:
+            cur.close()
+            return jsonify({'error': 'Send history entry not found'}), 404
+
+        cur.execute("""
+            SELECT phone, name, status, delivery_status, attempted_at, sent_at,
+                   delivered_at, read_at, send_error, delivery_error
+            FROM send_logs
+            WHERE job_id = %s AND user_id = %s
+            ORDER BY id ASC
+        """, (job_id, user_id))
+        log_rows = cur.fetchall()
+        cur.close()
+
+        contacts = job[3] or []
+        if isinstance(contacts, str):
+            contacts = json.loads(contacts)
+        if not contacts:
+            contacts = [{'phone': row[0], 'name': row[1] or ''} for row in log_rows]
+        # Keep every source row, including recipients not reached by a
+        # cancelled/interrupted send. Queue logs per number to preserve dupes.
+        logs_by_phone = defaultdict(deque)
+        for row in log_rows:
+            logs_by_phone[str(row[0] or '')].append(row)
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = 'Recipient statuses'
+        headers = [
+            'Phone number', 'Name', 'Send status', 'Delivery status',
+            'Attempted at (UTC)', 'Accepted by WhatsApp at (UTC)',
+            'Delivered at (UTC)', 'Read at (UTC)', 'Send error', 'Delivery error'
+        ]
+        sheet.append(headers)
+
+        for contact in contacts:
+            phone = str(contact.get('phone') or '')
+            name = contact.get('name') or ''
+            row = logs_by_phone[phone].popleft() if logs_by_phone[phone] else None
+            if row:
+                send_status = row[2]
+                delivery_status = row[3] or 'pending'
+                if delivery_status in ('pending', 'sent'):
+                    delivery_status = 'Not delivered yet' if send_status == 'sent' else 'Not applicable'
+                elif delivery_status in ('delivered', 'read'):
+                    delivery_status = delivery_status.title()
+                elif delivery_status == 'failed':
+                    delivery_status = 'Failed'
+                sheet.append([
+                    phone, name, send_status.title(), delivery_status,
+                    row[4], row[5], row[6], row[7], row[8] or '', row[9] or ''
+                ])
+            else:
+                sheet.append([phone, name, 'Not attempted', 'Not sent', None, None, None, None, '', ''])
+
+        header_fill = PatternFill('solid', fgColor='123456')
+        for cell in sheet[1]:
+            cell.font = Font(bold=True, color='FFFFFF')
+            cell.fill = header_fill
+        sheet.freeze_panes = 'A2'
+        sheet.auto_filter.ref = sheet.dimensions
+        widths = [22, 24, 18, 24, 24, 32, 24, 24, 48, 48]
+        for index, width in enumerate(widths, start=1):
+            sheet.column_dimensions[chr(64 + index)].width = width
+        for row in sheet.iter_rows(min_row=2, min_col=5, max_col=8):
+            for cell in row:
+                if cell.value:
+                    cell.number_format = 'yyyy-mm-dd hh:mm:ss'
+
+        output = io.BytesIO()
+        workbook.save(output)
+        output.seek(0)
+        base_name = secure_filename(job[1] or 'send') or 'send'
+        base_name = base_name.rsplit('.', 1)[0]
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=f'{base_name}_recipient_statuses.xlsx'
+        )
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     finally:
