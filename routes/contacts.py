@@ -146,14 +146,24 @@ def list_files():
     try:
         cur = conn.cursor()
         cur.execute("""
-            SELECT source_file, COUNT(*) as cnt, MAX(created_at) as imported_at,
-                   ARRAY(SELECT DISTINCT field_name FROM contacts c2,
-                         LATERAL jsonb_object_keys(c2.extra_data) AS fields(field_name)
-                         WHERE c2.user_id = c.user_id AND c2.source_file = c.source_file ORDER BY field_name) AS columns
-            FROM contacts c WHERE user_id = %s
-            GROUP BY source_file, user_id
-            ORDER BY MAX(created_at) DESC
-        """, (user_id,))
+            WITH file_summary AS (
+                SELECT source_file, COUNT(*) AS cnt, MAX(created_at) AS imported_at
+                FROM contacts WHERE user_id = %s
+                GROUP BY source_file
+            ), file_columns AS (
+                SELECT c.source_file,
+                       ARRAY_AGG(DISTINCT field_name ORDER BY field_name) AS columns
+                FROM contacts c
+                CROSS JOIN LATERAL jsonb_object_keys(c.extra_data) AS fields(field_name)
+                WHERE c.user_id = %s
+                GROUP BY c.source_file
+            )
+            SELECT f.source_file, f.cnt, f.imported_at,
+                   COALESCE(fc.columns, ARRAY[]::text[])
+            FROM file_summary f
+            LEFT JOIN file_columns fc ON fc.source_file = f.source_file
+            ORDER BY f.imported_at DESC
+        """, (user_id, user_id))
         rows = cur.fetchall()
         cur.close()
         files = [

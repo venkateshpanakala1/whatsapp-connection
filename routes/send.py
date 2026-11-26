@@ -10,6 +10,7 @@ from collections import defaultdict, deque
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from werkzeug.utils import secure_filename
+from routes.meta_templates_cache import get_meta_templates
 
 send_bp = Blueprint('send', __name__)
 META_API = 'https://graph.facebook.com/v22.0'
@@ -415,29 +416,15 @@ def get_templates():
     creds = get_wa_credentials(user_id)
     if not creds:
         return jsonify({'error': 'WhatsApp not connected'}), 400
-    try:
-        all_templates = []
-        url    = f"{META_API}/{creds['waba_id']}/message_templates"
-        params = {'limit': 100, 'fields': 'id,name,category,language,status,components'}
-        headers = {'Authorization': f"Bearer {creds['access_token']}"}
-
-        while url:
-            res  = http.get(url, params=params, headers=headers, timeout=10)
-            data = res.json()
-            if 'error' in data:
-                return jsonify({'error': data['error']['message']}), 400
-            all_templates.extend(data.get('data', []))
-            url    = data.get('paging', {}).get('next')
-            params = {}
-
-        approved = [
-            t for t in all_templates
-            if t.get('status') in ('APPROVED', 'PENDING')
-            and not t.get('name', '').startswith('cr_')
-        ]
-        return jsonify({'success': True, 'templates': approved[:5], 'all': approved})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    all_templates, error = get_meta_templates(creds['waba_id'], creds['access_token'])
+    if error:
+        return jsonify({'error': error}), 502
+    approved = [
+        t for t in all_templates
+        if t.get('status') in ('APPROVED', 'PENDING')
+        and not t.get('name', '').startswith('cr_')
+    ]
+    return jsonify({'success': True, 'templates': approved[:5], 'all': approved})
 
 
 # POST /api/send/start
@@ -696,9 +683,8 @@ def export_send_history(job_id):
         put_conn(conn)
 
 
-# GET /api/send/history  — every past bulk-send run for this user, with
-# delivered/read/replied engagement counts alongside the raw sent/failed
-# ones. Not capped — the frontend paginates the full list itself (see
+# GET /api/send/history — every past bulk-send run for this user. Not capped —
+# the frontend paginates the full list itself (see
 # history.html), so this needs to return everything, not just a recent slice.
 @send_bp.route('/history', methods=['GET'])
 def send_history():
@@ -709,20 +695,9 @@ def send_history():
         cur.execute("""
             SELECT
                 sj.id, sj.source_file, sj.template_name, sj.status, sj.total,
-                sj.sent, sj.failed, sj.created_at, sj.updated_at, sj.delay, sj.errors,
-                COUNT(sl.id) FILTER (WHERE sl.delivered_at IS NOT NULL)      AS delivered_count,
-                COUNT(sl.id) FILTER (WHERE sl.read_at IS NOT NULL)          AS read_count,
-                COUNT(DISTINCT sl.phone) FILTER (WHERE EXISTS (
-                    SELECT 1 FROM replies r
-                    WHERE r.user_id = sj.user_id AND r.direction = 'in'
-                      AND RIGHT(regexp_replace(r.from_phone, '\\D', '', 'g'), 10)
-                        = RIGHT(regexp_replace(sl.phone, '\\D', '', 'g'), 10)
-                      AND r.received_at > sl.sent_at
-                ))                                                          AS replied_count
+                sj.sent, sj.failed, sj.created_at, sj.updated_at, sj.delay, sj.errors
             FROM send_jobs sj
-            LEFT JOIN send_logs sl ON sl.job_id = sj.id AND sl.status = 'sent'
             WHERE sj.user_id = %s
-            GROUP BY sj.id
             ORDER BY sj.created_at DESC
         """, (user_id,))
         rows = cur.fetchall()
@@ -740,9 +715,6 @@ def send_history():
                 'updated_at':      (r[8].isoformat() + 'Z') if r[8] else '',
                 'delay':           r[9],
                 'errors':          r[10] or [],
-                'delivered_count': r[11],
-                'read_count':      r[12],
-                'replied_count':   r[13],
             }
             for r in rows
         ]
